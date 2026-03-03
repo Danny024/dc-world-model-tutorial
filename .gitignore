@@ -10,6 +10,7 @@ env/
 .env
 
 # ── Credentials — NEVER commit these ─────────────────────────────────────────
+deploy/config.env          # contains real GCP_PROJECT_ID — fill locally, never commit
 *.json
 service-account*.json
 gcp-key*.json
