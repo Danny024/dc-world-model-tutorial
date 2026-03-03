@@ -32,7 +32,7 @@ USD_STAGE_PATH  = (
 NUM_RACKS        = 48          # Number of server racks in the DataHall
 SIM_DAYS         = 30          # Days of synthetic history to generate
 SAMPLE_INTERVAL  = 300         # Seconds between readings (5 min)
-FAILURE_RATE     = 0.04        # Probability any given rack enters a failure window/day
+FAILURE_RATE     = 0.15        # Probability any given rack enters a failure window/day
 
 # ── Failure scenario definitions ──────────────────────────────────────────────
 FAILURE_SCENARIOS = {

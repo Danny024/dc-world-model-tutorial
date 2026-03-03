@@ -198,11 +198,30 @@ def train(
     val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, num_workers=4)
     print(f"Train: {n_train:,} samples  |  Val: {n_val:,} samples")
 
+    # ── Per-horizon class weights to handle imbalance ─────────────────────────
+    # Each horizon has a different positive rate:
+    #   1h  → few windows are within 1h of a failure  (most imbalanced)
+    #   6h  → more windows fall within 6h of a failure
+    #   24h → even more windows within 24h (least imbalanced)
+    # Computing weights separately prevents the far-horizon heads from degenerating.
+    dev = "cuda" if torch.cuda.is_available() else "cpu"
+    criteria: dict[str, nn.CrossEntropyLoss] = {}
+    for horizon_name in HORIZONS:
+        labels = [dataset.samples[i][1][horizon_name] for i in range(len(dataset))]
+        n_neg = sum(1 for l in labels if l == 0)
+        n_pos = sum(1 for l in labels if l == 1)
+        n_tot = n_neg + n_pos
+        w_neg = n_tot / (2 * max(n_neg, 1))
+        w_pos = n_tot / (2 * max(n_pos, 1))
+        weights = torch.tensor([w_neg, w_pos], dtype=torch.float32).to(dev)
+        criteria[horizon_name] = nn.CrossEntropyLoss(weight=weights)
+        print(f"  {horizon_name:>3s} weights — normal: {w_neg:.3f}  failure: {w_pos:.3f}  "
+              f"(pos rate: {100*n_pos/n_tot:.1f}%)")
+
     # ── Model ─────────────────────────────────────────────────────────────────
     model     = DataCenterWorldModel().to(device)
     optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=epochs)
-    criterion = nn.CrossEntropyLoss()
 
     best_val_loss = float("inf")
 
@@ -215,7 +234,7 @@ def train(
             logits = model(x)
 
             loss = sum(
-                criterion(logits[name], y_dict[name].to(device))
+                criteria[name](logits[name], y_dict[name].to(device))
                 for name in HORIZONS
             )
             optimizer.zero_grad()
@@ -238,7 +257,7 @@ def train(
                 logits = model(x)
                 for name in HORIZONS:
                     y = y_dict[name].to(device)
-                    val_loss += criterion(logits[name], y).item()
+                    val_loss += criteria[name](logits[name], y).item()
                     correct[name] += (logits[name].argmax(1) == y).sum().item()
                 total += x.size(0)
 
@@ -282,8 +301,15 @@ def predict(model: DataCenterWorldModel, window: np.ndarray, device: str = "cpu"
     """
     window: np.ndarray of shape (WINDOW_SIZE, NUM_FEATURES)
     Returns: {'1h': prob, '6h': prob, '24h': prob}
+
+    NOTE: applies the same per-window z-score normalization used during training.
     """
-    x = torch.tensor(window, dtype=torch.float32).unsqueeze(0).to(device)
+    # Must match SensorWindowDataset normalization exactly
+    mean = window.mean(axis=0, keepdims=True)
+    std  = window.std(axis=0,  keepdims=True) + 1e-8
+    window_norm = (window - mean) / std
+
+    x = torch.tensor(window_norm, dtype=torch.float32).unsqueeze(0).to(device)
     with torch.no_grad():
         logits = model(x)
     return {
