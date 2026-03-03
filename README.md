@@ -58,6 +58,55 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 
 ---
 
+## Getting the USD Assets (Students — Read This First)
+
+The 9.6 GB NVIDIA Data Center digital twin is provided by your instructor
+via a shared Google Cloud Storage bucket. You do **not** need to find or
+download it yourself — one script handles everything.
+
+### If you are a student
+
+Your instructor will give you a **bucket name** (looks like `my-project-omniverse-assets`).
+Run this single command after cloning the repo:
+
+```bash
+GCS_BUCKET=<bucket-name-from-instructor> bash deploy/student_setup.sh
+```
+
+That script will:
+1. Install `gcloud` CLI if you don't have it
+2. Open a browser to authenticate your Google account
+3. Download the full 9.6 GB asset tree to `~/datacenter_assets/`
+4. Install all Python dependencies
+5. Print a checklist confirming you're ready
+
+> **No Google account?** A free Gmail account works. Your instructor just needs
+> your email address to grant you read-only access to the bucket.
+
+### If you are the instructor
+
+Upload the assets once, then grant each student read access:
+
+```bash
+# Step 1 — Upload your local copy to GCS (run once)
+source deploy/config.env
+bash deploy/03_upload_assets.sh
+
+# Step 2 — Grant a single student access
+bash deploy/instructor_grant_access.sh student@gmail.com
+
+# Step 2 (whole class at once) — put emails in a text file, one per line
+bash deploy/instructor_grant_access.sh --file class_roster.txt
+
+# Step 2 (Google Group) — easiest for 10+ students
+bash deploy/instructor_grant_access.sh --group your-class@googlegroups.com
+```
+
+Students only get **read-only** access — they can download assets but cannot
+modify or delete anything in the bucket.
+
+---
+
 ## Prerequisites — Read Before You Start
 
 ### Knowledge You Should Have
@@ -69,10 +118,10 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 ### Hardware / Accounts You Need
 | Requirement | Why | Where to Get |
 |---|---|---|
-| Linux PC with NVIDIA GPU | Building the Kit app locally | Your lab machine |
-| Google Cloud account | Deploy + train in the cloud | [console.cloud.google.com](https://console.cloud.google.com) |
+| Linux PC with NVIDIA GPU | Training the model fast | Your lab machine |
+| Google account (Gmail OK) | Download USD assets from instructor | [gmail.com](https://gmail.com) — it's free |
+| Google Cloud account | Deploy + train in the cloud (Phases 4–9) | [console.cloud.google.com](https://console.cloud.google.com) |
 | GitHub account | Fork this repo | [github.com](https://github.com) |
-| Docker 20+ | Build the container | `sudo apt install docker.io` |
 | Python 3.10+ | Run training scripts | Usually pre-installed |
 
 ### Estimated Cloud Costs
@@ -95,16 +144,18 @@ dc-world-model-tutorial/
 ├── README.md                    ← You are here
 │
 ├── deploy/                      ← All automation scripts (run in order)
-│   ├── config.env               ← Edit this first (your project ID, etc.)
-│   ├── 01_install_gcloud.sh     ← Phase 1: Install Google Cloud CLI
-│   ├── 02_gcp_setup.sh          ← Phase 2: Create cloud infrastructure
-│   ├── 03_upload_assets.sh      ← Phase 3: Upload USD to GCS
-│   ├── 04_build_and_push.sh     ← Phase 4: Build Docker image
-│   ├── 05_deploy_vm.sh          ← Phase 5: Launch streaming on GPU VM
-│   ├── 06_generate_failure_data.py  ← Phase 6: Synthetic dataset
-│   ├── 07_world_model.py        ← Phase 7: Transformer model (PyTorch)
-│   ├── 08_vertex_training.py    ← Phase 8: Vertex AI training job
-│   └── 09_inference_config.toml ← Phase 9: Connect inference to viewer
+│   ├── config.env                    ← Instructor: edit this first
+│   ├── student_setup.sh              ← STUDENTS START HERE ← ← ←
+│   ├── instructor_grant_access.sh    ← Instructor: grant students bucket access
+│   ├── 01_install_gcloud.sh          ← Phase 1: Install Google Cloud CLI
+│   ├── 02_gcp_setup.sh               ← Phase 2: Create cloud infrastructure
+│   ├── 03_upload_assets.sh           ← Phase 3: Upload USD to GCS (instructor)
+│   ├── 04_build_and_push.sh          ← Phase 4: Build Docker image
+│   ├── 05_deploy_vm.sh               ← Phase 5: Launch streaming on GPU VM
+│   ├── 06_generate_failure_data.py   ← Phase 6: Synthetic dataset
+│   ├── 07_world_model.py             ← Phase 7: Transformer model (PyTorch)
+│   ├── 08_vertex_training.py         ← Phase 8: Vertex AI training job
+│   └── 09_inference_config.toml      ← Phase 9: Connect inference to viewer
 │
 ├── docs/                        ← Deep-dive guides for each phase
 │   ├── 01_what_is_a_digital_twin.md
