@@ -1,0 +1,50 @@
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+build/
+.venv/
+venv/
+env/
+.env
+
+# ── Credentials — NEVER commit these ─────────────────────────────────────────
+*.json
+service-account*.json
+gcp-key*.json
+credentials*.json
+application_default_credentials.json
+
+# ── Model artefacts (large binaries — use GCS instead) ───────────────────────
+model_output/
+*.pt
+*.pth
+*.onnx
+
+# ── Data files (use GCS instead) ─────────────────────────────────────────────
+*.csv
+sensor_timeseries*.csv
+
+# ── USD / Omniverse (very large — use GCS) ───────────────────────────────────
+*.usd
+*.usdc
+*.usda
+*.usdz
+_tmp/
+_cache/
+
+# ── OS / Editor ───────────────────────────────────────────────────────────────
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+Thumbs.db
+
+# ── Docker ────────────────────────────────────────────────────────────────────
+.dockerignore
+
+# ── Logs ──────────────────────────────────────────────────────────────────────
+*.log
+logs/

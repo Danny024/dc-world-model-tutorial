@@ -1,0 +1,22 @@
+# ============================================================
+# Python dependencies for dc-world-model-tutorial
+# Install with: pip install -r requirements.txt
+#
+# For GPU training, also install the CUDA version of PyTorch:
+#   pip install torch --index-url https://download.pytorch.org/whl/cu121
+# ============================================================
+
+# ── Deep Learning ─────────────────────────────────────────────────────────────
+torch>=2.1.0
+numpy>=1.24.0
+
+# ── Data Processing ───────────────────────────────────────────────────────────
+pandas>=2.0.0
+
+# ── Google Cloud ──────────────────────────────────────────────────────────────
+google-cloud-storage>=2.14.0
+google-cloud-aiplatform>=1.42.0
+
+# ── Utilities ─────────────────────────────────────────────────────────────────
+# For reading TOML config files (Python 3.10 has tomllib built-in)
+tomli>=2.0.0; python_version < "3.11"

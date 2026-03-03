@@ -1,0 +1,74 @@
+# ============================================================
+# Phase 9 — Inference Integration Configuration
+# Connects the Vertex AI endpoint back to the Omniverse viewer
+# ============================================================
+
+[vertex_ai]
+# GCP project and region where the endpoint was deployed
+project_id  = "YOUR_PROJECT_ID"
+region      = "us-central1"
+
+# Vertex AI endpoint ID — fill in after running 08_vertex_training.py
+# Format: projects/<NUM>/locations/<REGION>/endpoints/<ENDPOINT_ID>
+endpoint_id = ""
+
+# Auth: uses Application Default Credentials (gcloud auth application-default login)
+# No key file needed when running on GCP Compute Engine or Vertex AI
+
+# ── Polling ────────────────────────────────────────────────
+[polling]
+# How often (seconds) to pull fresh sensor readings and call the endpoint
+interval_seconds = 60
+
+# Maximum number of racks to score per polling cycle (rate-limit guard)
+max_racks_per_batch = 48
+
+# ── Alert thresholds ───────────────────────────────────────
+[thresholds]
+# Failure probability above which an alert is raised per horizon
+alert_1h  = 0.70   # 70% probability of failure in next 1 hour
+alert_6h  = 0.55   # 55% probability of failure in next 6 hours
+alert_24h = 0.40   # 40% probability of failure in next 24 hours
+
+# ── Rack ID mapping ────────────────────────────────────────
+# Maps sensor rack_id integers to USD prim paths in the DataHall stage.
+# Used to highlight failing racks in the Omniverse viewport.
+# Format: [[rack_id, "usd_prim_path"], ...]
+[rack_mapping]
+prim_path_template = "/World/DataHall/Racks/Rack_{rack_id:04d}"
+
+# Override individual racks if their prim paths differ from the template:
+# [[overrides]]
+# rack_id   = 0
+# prim_path = "/World/DataHall/Row_A/Rack_A01"
+
+# ── Omniverse connection ───────────────────────────────────
+[omniverse]
+# Kit streaming host (VM IP set by 05_deploy_vm.sh)
+kit_host = "localhost"
+kit_port = 8012
+
+# Extension that receives failure alerts and updates prim attributes / overlays
+alert_extension = "datacenter.failure_overlay"
+
+# Attribute written on failing rack prims (custom USD attribute)
+failure_attr_prefix = "datacenter:failureProbability"
+
+# ── Logging ────────────────────────────────────────────────
+[logging]
+level     = "INFO"
+log_file  = "/var/log/datacenter_inference.log"
+rotate_mb = 50
+keep_logs = 5
+
+# ── GCS data ───────────────────────────────────────────────
+[data]
+# GCS path where live sensor readings are written (by your DCIM / sensor pipeline)
+live_sensor_gcs   = "gs://YOUR_PROJECT_ID-omniverse-assets/live-sensor-data/"
+
+# Window size must match the model's WINDOW_SIZE (12 steps = 60 min at 5-min intervals)
+window_size       = 12
+sample_interval_s = 300
+
+# Feature columns expected by the model (must match 07_world_model.py FEATURE_COLS)
+feature_columns   = ["temp_c", "power_kw", "disk_health", "cpu_load"]
