@@ -33,11 +33,11 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 │                   GOOGLE CLOUD PLATFORM                             │
 │                                                                     │
 │  ┌──────────────────────┐     ┌──────────────────────────────────┐  │
-│  │   GPU VM (L4)        │     │   GCS Bucket                     │  │
+│  │   Cloud Run          │     │   GCS Bucket                     │  │
 │  │                      │     │   ├── Datacenter_NVD@10012/ (9GB)│  │
-│  │  NVIDIA Kit App  ◄───┼─────┤   ├── training-data/            │  │
-│  │  (USD Explorer)      │     │   │   └── sensor_timeseries.csv  │  │
-│  │  Port 8011 ─► Web   │     │   └── models/                    │  │
+│  │  Inference Service ◄─┼─────┤   ├── training-data/            │  │
+│  │  (REST API)          │     │   │   └── sensor_timeseries.csv  │  │
+│  │  /predict ─► JSON    │     │   └── models/                    │  │
 │  └──────────────────────┘     │       └── best_model.pt          │  │
 │                               └──────────────────────────────────┘  │
 │                                           │                         │
@@ -301,11 +301,11 @@ curl -X POST http://localhost:8080/predict \
 
 ---
 
-### Phase 5 — Deploy to GCP and Launch Streaming
+### Phase 5 — Deploy Inference Service to Cloud Run
 
-**Concept:** We SSH into the GPU VM, pull the container, and start it.
-The container exposes port 8011 which serves a WebRTC stream of the 3D scene —
-your browser becomes a remote viewer into the data center digital twin.
+**Concept:** Cloud Run is Google's serverless container platform. You give it a Docker
+image, it runs it at a public HTTPS URL, and you pay only when requests are in flight.
+It scales to zero when idle — no VM to manage, no GPU required for inference.
 
 ```bash
 source deploy/config.env
@@ -314,12 +314,26 @@ bash deploy/05_deploy_vm.sh
 
 After it completes, the script prints a URL like:
 ```
-  http://35.202.X.X:8011
+  Health check : https://datacenter-inference-xxxx-uc.a.run.app/health
+  Predict      : POST https://datacenter-inference-xxxx-uc.a.run.app/predict
 ```
 
-Open that URL in Chrome or Firefox — you should see the DataHall 3D scene streaming live.
+**Test it:**
+```bash
+# Health
+curl https://YOUR_SERVICE_URL/health
+# → {"model_loaded": true, "status": "ok"}
 
-**Checkpoint:** Browser shows the 3D data center. You can orbit and zoom. ✓
+# Single rack prediction (12 timesteps × 4 features)
+curl -X POST https://YOUR_SERVICE_URL/predict \
+  -H "Content-Type: application/json" \
+  -d '{"window": [[23.4,5.82,0.97,0.42], ...]}'
+# → {"1h": 0.12, "6h": 0.34, "24h": 0.67}
+```
+
+**Checkpoint:** `curl https://YOUR_SERVICE_URL/health` returns `{"status": "ok"}`. ✓
+
+> **Stop billing when done:** `gcloud run services delete datacenter-inference --region=us-central1`
 
 ---
 
@@ -465,7 +479,7 @@ These are open-ended challenges to deepen your understanding:
 | `gcloud: command not found` | Phase 1 not complete | Run `bash deploy/01_install_gcloud.sh` |
 | `403 Forbidden` on GCS | Not authenticated | Run `gcloud auth application-default login` |
 | `CUDA out of memory` | Batch size too large | Reduce `BATCH_SIZE` in `07_world_model.py` |
-| `VM not found` | Wrong zone | Check `GCP_ZONE` in `config.env` |
+| `VM not found` on Phase 5 | Phase 5 now uses Cloud Run, not a VM | Run `bash deploy/05_deploy_vm.sh` — it deploys to Cloud Run |
 | `docker push denied` | Not authenticated to AR | Run `gcloud auth configure-docker us-central1-docker.pkg.dev` |
 | `docker build` fails on COPY | `deploy/inference_server.py` missing | Re-clone the repo — this file must be present |
 | `Model checkpoint not found` | `best_model.pt` not mounted | Run Phase 7 first, then mount: `-v $(pwd)/model_output:/app/model_output` |

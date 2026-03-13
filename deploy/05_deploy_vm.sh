@@ -1,85 +1,91 @@
 #!/usr/bin/env bash
-# Phase 5 — Deploy Container on GPU VM and Launch Kit Streaming
-# Prerequisites: VM running, image pushed, config.env sourced
+# Phase 5 — Deploy ML Inference Service to Cloud Run
+# ────────────────────────────────────────────────────
+# Deploys the datacenter-inference container as a managed Cloud Run service.
+# No VM, no GPU, no NGC account required. Scales to zero when idle.
+#
+# Prerequisites:
+#   - Phase 4 complete (image in Artifact Registry)
+#   - Phase 7 or 8 complete (best_model.pt uploaded to GCS)
+#   - gcloud authenticated with project set
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.env"
 
-echo "=== Phase 5: Deploy to GPU VM ==="
-echo "  VM   : ${VM_NAME} (${GCP_ZONE})"
-echo "  Image: ${IMAGE_URI}"
+SERVICE_NAME="datacenter-inference"
+MODEL_GCS_URI="${MODEL_ARTEFACT_GCS}/best_model.pt"
+
+echo "=== Phase 5: Deploy Inference Service to Cloud Run ==="
+echo "  Service : ${SERVICE_NAME}"
+echo "  Image   : ${INFERENCE_IMAGE_URI}"
+echo "  Model   : ${MODEL_GCS_URI}"
+echo "  Region  : ${GCP_REGION}"
 echo ""
 
-# ── 1. Get VM external IP ─────────────────────────────────────────────────────
-VM_IP=$(gcloud compute instances describe "${VM_NAME}" \
-    --zone="${GCP_ZONE}" \
+# ── 1. Enable Cloud Run API if not already enabled ────────────────────────────
+echo "Enabling Cloud Run API..."
+gcloud services enable run.googleapis.com \
+    --project="${GCP_PROJECT_ID}" --quiet
+
+# ── 2. Deploy to Cloud Run ────────────────────────────────────────────────────
+echo ""
+echo "Deploying to Cloud Run (this takes ~2 minutes on first deploy)..."
+gcloud run deploy "${SERVICE_NAME}" \
+    --image="${INFERENCE_IMAGE_URI}" \
+    --region="${GCP_REGION}" \
     --project="${GCP_PROJECT_ID}" \
-    --format="get(networkInterfaces[0].accessConfigs[0].natIP)")
+    --platform=managed \
+    --set-env-vars="MODEL_GCS_URI=${MODEL_GCS_URI}" \
+    --memory=2Gi \
+    --cpu=2 \
+    --timeout=60 \
+    --min-instances=0 \
+    --max-instances=10 \
+    --allow-unauthenticated \
+    --quiet
 
-echo "VM external IP: ${VM_IP}"
-
-# ── 2. Inline script to run on the VM ────────────────────────────────────────
-REMOTE_SCRIPT=$(cat <<REMOTE
-set -euo pipefail
-
-# Authenticate Docker with Artifact Registry
-gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
-
-# Pull the latest image
-docker pull ${IMAGE_URI}
-
-# Mount GCS bucket via gcsfuse
-MOUNT_DIR=/mnt/omniverse-assets
-mkdir -p \${MOUNT_DIR}
-if ! mountpoint -q "\${MOUNT_DIR}"; then
-    gcsfuse --implicit-dirs ${GCS_BUCKET} \${MOUNT_DIR}
-    echo "GCS bucket mounted at \${MOUNT_DIR}"
-fi
-
-# Stop any previous container
-docker stop datacenter-kit 2>/dev/null || true
-docker rm   datacenter-kit 2>/dev/null || true
-
-# Launch Kit streaming container
-docker run -d \
-    --name datacenter-kit \
-    --gpus all \
-    --restart unless-stopped \
-    -p 8011:8011 \
-    -p 8012:8012 \
-    -p 49100-49200:49100-49200/udp \
-    -v \${MOUNT_DIR}:/mnt/assets:ro \
-    -e OMNI_SERVER="" \
-    -e ACCEPT_EULA=Y \
-    ${IMAGE_URI} \
-    --/app/auto_load_usd="/mnt/assets/Datacenter_NVD@10012/Assets/DigitalTwin/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" \
-    --/app/streaming/enabled=true \
-    --/app/streaming/webrtc/enabled=true \
-    --/app/streaming/webrtc/port=8012 \
-    --/app/streaming/http/port=8011
-
-echo "Container started. Waiting for Kit to initialize..."
-sleep 10
-docker logs datacenter-kit --tail 30
-REMOTE
-)
-
-# ── 3. SSH and execute ────────────────────────────────────────────────────────
-echo "Connecting to VM and deploying..."
-gcloud compute ssh "${VM_NAME}" \
-    --zone="${GCP_ZONE}" \
+# ── 3. Get service URL ────────────────────────────────────────────────────────
+SERVICE_URL=$(gcloud run services describe "${SERVICE_NAME}" \
+    --region="${GCP_REGION}" \
     --project="${GCP_PROJECT_ID}" \
-    --command="${REMOTE_SCRIPT}"
+    --format="get(status.url)")
 
 echo ""
 echo "=== Phase 5 complete ==="
 echo ""
-echo "Kit streaming is live. Open in your browser:"
+echo "Inference service is live:"
 echo ""
-echo "  WebRTC stream : http://${VM_IP}:8011"
-echo "  WebSocket API : ws://${VM_IP}:8012"
+echo "  Health check : ${SERVICE_URL}/health"
+echo "  Predict      : POST ${SERVICE_URL}/predict"
+echo "  Batch predict: POST ${SERVICE_URL}/predict/batch"
 echo ""
-echo "If the page doesn't load immediately, wait 60 seconds for Kit to fully start."
-echo "Check container logs with:"
-echo "  gcloud compute ssh ${VM_NAME} --zone=${GCP_ZONE} -- docker logs -f datacenter-kit"
+echo "Quick test:"
+echo "  curl ${SERVICE_URL}/health"
+echo ""
+echo "Example prediction (replace with real sensor values):"
+cat <<EXAMPLE
+  curl -X POST ${SERVICE_URL}/predict \\
+    -H "Content-Type: application/json" \\
+    -d '{
+      "window": [
+        [23.4, 5.82, 0.97, 0.42],
+        [24.1, 5.90, 0.96, 0.44],
+        [25.0, 6.10, 0.95, 0.51],
+        [26.2, 6.30, 0.94, 0.55],
+        [27.8, 6.60, 0.93, 0.60],
+        [29.5, 6.90, 0.91, 0.65],
+        [31.2, 7.10, 0.89, 0.70],
+        [33.0, 7.40, 0.87, 0.74],
+        [35.1, 7.70, 0.84, 0.78],
+        [37.4, 8.00, 0.81, 0.82],
+        [40.0, 8.40, 0.77, 0.86],
+        [43.2, 8.90, 0.72, 0.90]
+      ]
+    }'
+EXAMPLE
+echo ""
+echo "Stop billing when done:"
+echo "  gcloud run services delete ${SERVICE_NAME} --region=${GCP_REGION}"
+echo ""
+echo "Next step: python3 deploy/06_generate_failure_data.py"
