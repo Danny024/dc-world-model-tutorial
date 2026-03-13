@@ -22,10 +22,11 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 
 ```
 ┌─────────────────────────────────────────────────────────────────────┐
-│                      LOCAL MACHINE (you)                            │
+│              YOUR LAPTOP  (no GPU required)                         │
 │                                                                     │
 │  Dockerfile ──► docker build ──► datacenter-inference image         │
 │  DataHall_Full_01.usd ──────────────────────► GCS bucket           │
+│  Browser ◄──────────────── WebRTC stream (port 8011)               │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │  Docker push / gsutil cp
                                 ▼
@@ -36,24 +37,24 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 │  │   Cloud Run          │     │   GCS Bucket                     │  │
 │  │                      │     │   ├── Datacenter_NVD@10012/ (9GB)│  │
 │  │  Inference Service ◄─┼─────┤   ├── training-data/            │  │
-│  │  (REST API)          │     │   │   └── sensor_timeseries.csv  │  │
+│  │  (REST API, CPU)     │     │   │   └── sensor_timeseries.csv  │  │
 │  │  /predict ─► JSON    │     │   └── models/                    │  │
 │  └──────────────────────┘     │       └── best_model.pt          │  │
-│                               └──────────────────────────────────┘  │
-│                                           │                         │
-│                               ┌───────────▼──────────────────────┐  │
-│                               │   Vertex AI                       │  │
-│                               │   ├── Training Job (A100)         │  │
-│                               │   └── Endpoint (live inference)   │  │
-│                               └──────────────────────────────────┘  │
+│                               └──────────────┬───────────────────┘  │
+│  ┌──────────────────────┐                    │ gsutil cp            │
+│  │   GPU VM (L4)        │◄───────────────────┘ (downloads &        │
+│  │                      │     USD assets on local disk             │
+│  │  Kit Streaming       │     (decompressed automatically)         │
+│  │  NVIDIA USD Viewer   │                                          │
+│  │  → WebRTC port 8011  │                                          │
+│  └──────────────────────┘                                          │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │   Vertex AI                                                  │  │
+│  │   ├── Training Job (A100 GPU)                                │  │
+│  │   └── Endpoint (live inference)                              │  │
+│  └──────────────────────────────────────────────────────────────┘  │
 └─────────────────────────────────────────────────────────────────────┘
-                                │
-                                │  Failure probability JSON
-                                ▼
-                     ┌──────────────────┐
-                     │ Omniverse Viewer │  Racks glow red when
-                     │ (your browser)   │  failure predicted
-                     └──────────────────┘
 ```
 
 ---
@@ -115,14 +116,27 @@ modify or delete anything in the bucket.
 - What Docker is (you don't need to be an expert)
 - What a neural network is (at the concept level)
 
+### Do You Need a GPU Laptop?
+
+**No.** Every GPU-intensive step runs entirely in the cloud:
+
+| What needs a GPU | Where it runs | Your laptop does |
+|---|---|---|
+| 3D scene rendering + WebRTC streaming | GCP VM with NVIDIA L4 | Opens a browser tab |
+| World model training | Vertex AI with NVIDIA A100 | Submits a job, waits |
+| Live inference | Cloud Run (CPU-only, serverless) | Sends HTTP requests |
+
+Any laptop (Windows, Mac, Linux) with a browser and internet connection is enough to
+complete every phase of this tutorial.
+
 ### Hardware / Accounts You Need
 | Requirement | Why | Where to Get |
 |---|---|---|
-| Linux PC with NVIDIA GPU | Training the model fast | Your lab machine |
+| Any laptop (no GPU needed) | Run scripts and view the 3D twin in your browser | You already have one |
 | Google account (Gmail OK) | Download USD assets from instructor | [gmail.com](https://gmail.com) — it's free |
-| Google Cloud account | Deploy + train in the cloud (Phases 4–9) | [console.cloud.google.com](https://console.cloud.google.com) |
+| Google Cloud account | Deploy + train in the cloud (Phases 2–9) | [console.cloud.google.com](https://console.cloud.google.com) |
 | GitHub account | Fork this repo | [github.com](https://github.com) |
-| Python 3.10+ | Run training scripts | Usually pre-installed |
+| Python 3.10+ | Run training scripts | Usually pre-installed on Linux/Mac; [python.org](https://python.org) for Windows |
 | Docker | Build the inference container (Phase 4) | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 
 ### Estimated Cloud Costs
@@ -245,9 +259,8 @@ What this script does step by step:
 
 ### Phase 3 — Upload USD Assets to GCS
 
-**Concept:** The DataHall USD stage is 9.6 GB on your local disk.
-We upload it to GCS so the GPU VM can access it via GCS Fuse (a filesystem mount that
-makes a GCS bucket look like a local folder).
+**Concept:** The DataHall USD stage is 9.6 GB on your local disk. We upload it to GCS
+so the GPU VM can download it at deploy time.
 
 ```bash
 source deploy/config.env
@@ -255,6 +268,9 @@ bash deploy/03_upload_assets.sh
 ```
 
 > This uses `gsutil -m` which uploads files in parallel — much faster than one at a time.
+> The script does **not** use gzip compression (`-z`) so USD files are stored as-is.
+> Gzip content-encoding would corrupt them when read by NVIDIA Kit (GCS Fuse does not
+> transparently decompress `Content-Encoding: gzip` objects).
 
 **Checkpoint:** `gsutil ls gs://YOUR_PROJECT-omniverse-assets/Datacenter_NVD@10012/` shows files. ✓
 
@@ -362,8 +378,10 @@ curl -X POST https://YOUR_SERVICE_URL/predict \
 
 ### Phase 5b — Deploy Kit Streaming on GPU VM (3D Visualization, optional)
 
-**Concept:** The GPU VM runs the Kit Streaming container, mounts the USD assets
-from GCS via gcsfuse, and streams the live 3D scene to your browser over WebRTC.
+**Concept:** The GPU VM runs the NVIDIA USD Viewer container, downloads the USD assets
+from GCS to its local disk, and streams the live 3D scene to your browser over WebRTC.
+No GPU is needed on your laptop — the L4 GPU on the VM does all the rendering and
+sends you a compressed video stream on port 8011.
 
 **Requires:** Phase 2 (VM created), Phase 3 (USD assets in GCS), Phase 4b (Kit image pushed).
 
@@ -374,7 +392,12 @@ bash deploy/03_upload_assets.sh # uploads USD assets to GCS
 bash deploy/05b_deploy_kit_vm.sh
 ```
 
-After it completes, open in Chrome:
+The deploy script automatically:
+1. Downloads USD assets from GCS to the VM's local disk (~9.4 GB, 5–10 min first run)
+2. Launches the Kit Streaming container with GPU access via CDI device selection
+3. Prints the URL when ready
+
+After it completes, open in **Chrome** or **Firefox**:
 ```
 http://<VM_EXTERNAL_IP>:8011
 ```
@@ -538,6 +561,9 @@ These are open-ended challenges to deepen your understanding:
 | `docker build` fails on COPY | `deploy/inference_server.py` missing | Re-clone the repo — this file must be present |
 | `Model checkpoint not found` | `best_model.pt` not mounted | Run Phase 7 first, then mount: `-v $(pwd)/model_output:/app/model_output` |
 | `Port 8011 refused` | VM firewall or Kit not started | Check `docker logs -f datacenter-kit` on the VM |
+| `Failed to get crate info` on USD open | Assets uploaded with `-z` (gzip encoding); gcsfuse doesn't decompress | Re-upload without `-z`, or let `05b_deploy_kit_vm.sh` download to local disk |
+| `libnvidia-nscq.so not found` on Docker run | Deep Learning VM server driver + CTK version mismatch | `02_gcp_setup.sh` now handles this automatically (CDI mode + disabled nvidia-cdi-refresh) |
+| `NVST_DISCONN_SERVER_VIDEO_ENCODER_INIT_DLL_LOAD_FAILED` | Missing NVENC/NVDEC libs | `02_gcp_setup.sh` installs `libnvidia-encode-570` automatically |
 | `KeyError: AIP_TRAINING_DATA_URI` | Not running inside Vertex AI | This script is for Vertex AI, not local execution |
 
 ---
