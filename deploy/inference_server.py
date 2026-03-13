@@ -116,6 +116,20 @@ def get_model() -> DataCenterWorldModel:
 
 # ── Routes ────────────────────────────────────────────────────────────────────
 
+@app.get("/")
+def index():
+    return jsonify({
+        "service": "Data Center World Model — Inference API",
+        "endpoints": {
+            "GET  /health":        "Liveness check",
+            "POST /predict":       "Single rack: {window: [[12×4 floats]]} → {1h, 6h, 24h probs}",
+            "POST /predict/batch": "Multiple racks: {windows: [...]} → [{1h, 6h, 24h}, ...]",
+        },
+        "features": ["temp_c", "power_kw", "disk_health", "cpu_load"],
+        "window_size": WINDOW_SIZE,
+    })
+
+
 @app.get("/health")
 def health():
     try:
