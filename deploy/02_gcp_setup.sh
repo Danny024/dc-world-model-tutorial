@@ -59,49 +59,93 @@ if gcloud compute instances describe "${VM_NAME}" \
     echo "VM '${VM_NAME}' already exists — skipping creation."
 else
     echo "Creating GPU VM '${VM_NAME}' (${VM_MACHINE_TYPE}, NVIDIA L4)..."
+    # Deep Learning VM image: NVIDIA drivers + CUDA pre-installed, no startup script needed
     gcloud compute instances create "${VM_NAME}" \
         --project="${GCP_PROJECT_ID}" \
         --zone="${GCP_ZONE}" \
         --machine-type="${VM_MACHINE_TYPE}" \
         --accelerator="count=1,type=nvidia-l4" \
         --maintenance-policy=TERMINATE \
-        --image-family=ubuntu-2204-lts \
-        --image-project=ubuntu-os-cloud \
+        --image-family=common-cu128-ubuntu-2204-nvidia-570 \
+        --image-project=deeplearning-platform-release \
         --boot-disk-size="${VM_DISK_SIZE}GB" \
         --boot-disk-type=pd-ssd \
         --scopes=cloud-platform \
-        --metadata=startup-script='#!/bin/bash
-# Install NVIDIA drivers + Container Toolkit on first boot
-set -euo pipefail
-apt-get update -y
-apt-get install -y linux-headers-$(uname -r)
+        --metadata="install-nvidia-driver=True" \
+        --tags=omniverse-kit
+    echo "VM created with NVIDIA drivers pre-installed."
+    echo "Installing Docker and gcsfuse (~2 min)..."
+    # Wait for SSH to become available
+    sleep 30
+    gcloud compute ssh "${VM_NAME}" --zone="${GCP_ZONE}" --project="${GCP_PROJECT_ID}" \
+        --command='
+set -e
+curl -fsSL https://get.docker.com | sudo sh
+sudo usermod -aG docker $USER
 
-# NVIDIA driver (550 series)
-curl -fsSL https://developer.download.nvidia.com/compute/cuda/repos/ubuntu2204/x86_64/cuda-keyring_1.1-1_all.deb \
-  -o /tmp/cuda-keyring.deb
-dpkg -i /tmp/cuda-keyring.deb
-apt-get update -y
-apt-get install -y cuda-drivers-550
+# Install missing NVIDIA libraries needed by the container toolkit
+# (Deep Learning VMs ship the -server driver variant which omits some libs)
+sudo apt-get install -y nvidia-compute-utils-570 libnvidia-cfg1-570 libnvidia-nscq-570
 
-# NVIDIA Container Toolkit
-curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
-  | gpg --dearmor -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
-curl -s -L https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
-  | sed "s#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#" \
-  | tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
-apt-get update -y
-apt-get install -y nvidia-container-toolkit
-nvidia-ctk runtime configure --runtime=docker
-systemctl restart docker
+# Configure NVIDIA CTK and enable CDI mode (avoids missing-library errors
+# from the legacy nvidia-container-cli on server-driver VMs)
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo mkdir -p /etc/cdi
+sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
 
-# GCS Fuse for mounting the asset bucket
-export GCSFUSE_REPO=gcsfuse-jammy
-echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt ${GCSFUSE_REPO} main" \
-  | tee /etc/apt/sources.list.d/gcsfuse.list
-apt-get update -y
-apt-get install -y gcsfuse
+# Disable the systemd CDI-refresh service that overwrites /run/cdi/nvidia.yaml
+# with a spec referencing libnvidia-nscq (not installed on server-driver VMs)
+sudo systemctl disable --now nvidia-cdi-refresh.path nvidia-cdi-refresh.service 2>/dev/null || true
+
+# Configure Docker to enable CDI device selection
+sudo bash -c '"'"'cat > /etc/docker/daemon.json <<EOF
+{
+  "runtimes": {
+    "nvidia": {
+      "path": "nvidia-container-runtime",
+      "runtimeArgs": []
+    }
+  },
+  "features": {
+    "cdi": true
+  }
+}
+EOF'"'"'
+sudo systemctl restart docker
+# Copy clean CDI spec to /run/cdi so Docker finds it
+sudo mkdir -p /run/cdi
+sudo cp /etc/cdi/nvidia.yaml /run/cdi/nvidia.yaml
+
+# Set up Vulkan ICD symlink for GPU rendering inside containers
+sudo mkdir -p /etc/vulkan/icd.d
+sudo ln -sf /usr/share/vulkan/icd.d/nvidia_icd.json /etc/vulkan/icd.d/nvidia_icd.json
+
+# Start nvidia-persistenced socket (needed by CTK inside containers)
+# Use a lightweight Python listener as the server driver does not start it
+python3 -c "
+import socket, os, threading
+p = '/run/nvidia-persistenced'
+os.makedirs(p, exist_ok=True)
+s = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+sp = p + '/socket'
+try: os.unlink(sp)
+except: pass
+s.bind(sp)
+s.listen(1)
+os.chmod(sp, 0o777)
+print('persistenced socket ready')
+threading.Thread(target=lambda: [s.accept()[0].close() for _ in iter(int, 1)], daemon=True).start()
+import time; time.sleep(5)  # hand off to systemd
+" &
+
+curl https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+  | sudo gpg --dearmor -o /usr/share/keyrings/cloud.google.gpg
+echo "deb [signed-by=/usr/share/keyrings/cloud.google.gpg] https://packages.cloud.google.com/apt gcsfuse-jammy main" \
+  | sudo tee /etc/apt/sources.list.d/gcsfuse.list
+sudo apt-get update -y -qq
+sudo apt-get install -y gcsfuse
+echo "Docker, gcsfuse, and GPU CDI ready."
 '
-    echo "VM created. NVIDIA drivers will install on first boot (~5 min)."
 fi
 
 # ── 6. Firewall rules for Kit streaming ──────────────────────────────────────

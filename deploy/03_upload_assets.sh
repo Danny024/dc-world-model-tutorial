@@ -26,8 +26,10 @@ du -sh "${USD_SOURCE_DIR}" || true
 echo ""
 
 echo "Starting parallel upload (this may take 10-30 min depending on bandwidth)..."
+# Do NOT use -z (gzip content encoding) — gcsfuse serves raw GCS bytes
+# without decompressing Content-Encoding:gzip, so USD files must be stored
+# uncompressed for NVIDIA Kit to read them correctly.
 gsutil -m cp -r \
-    -z usd,usda,usdc \
     "${USD_SOURCE_DIR}" \
     "gs://${GCS_BUCKET}/"
 
