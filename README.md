@@ -26,7 +26,7 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 │                                                                     │
 │  Dockerfile ──► docker build ──► datacenter-inference image         │
 │  DataHall_Full_01.usd ──────────────────────► GCS bucket           │
-│  Browser ◄──────────────── WebRTC stream (port 8011)               │
+│  Browser ◄──────────────── web viewer :8080 → WebRTC :49100        │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │  Docker push / gsutil cp
                                 ▼
@@ -46,7 +46,7 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 │  │                      │     USD assets on local disk             │
 │  │  Kit Streaming       │     (decompressed automatically)         │
 │  │  NVIDIA USD Viewer   │                                          │
-│  │  → WebRTC port 8011  │                                          │
+│  │  → WebRTC :49100     │  ← web-viewer-sample :8080 (Node.js)    │
 │  └──────────────────────┘                                          │
 │                                                                     │
 │  ┌──────────────────────────────────────────────────────────────┐  │
@@ -169,7 +169,8 @@ dc-world-model-tutorial/
 │   ├── 04_build_and_push.sh          ← Phase 4:  Build & push inference container
 │   ├── 04b_pull_kit_image.sh         ← Phase 4b: Pull Kit Streaming image (needs NGC)
 │   ├── 05_deploy_vm.sh               ← Phase 5:  Deploy inference service to Cloud Run
-│   ├── 05b_deploy_kit_vm.sh          ← Phase 5b: Deploy 3D streaming to GPU VM
+│   ├── 05b_deploy_kit_vm.sh          ← Phase 5b: Deploy Kit (WebRTC backend) to GPU VM
+│   ├── 05c_deploy_web_viewer.sh      ← Phase 5c: Build & serve browser WebRTC client
 │   ├── 06_generate_failure_data.py   ← Phase 6: Synthetic dataset
 │   ├── 07_world_model.py             ← Phase 7: Transformer model (PyTorch)
 │   ├── 08_vertex_training.py         ← Phase 8: Vertex AI training job
@@ -378,10 +379,9 @@ curl -X POST https://YOUR_SERVICE_URL/predict \
 
 ### Phase 5b — Deploy Kit Streaming on GPU VM (3D Visualization, optional)
 
-**Concept:** The GPU VM runs the NVIDIA USD Viewer container, downloads the USD assets
-from GCS to its local disk, and streams the live 3D scene to your browser over WebRTC.
-No GPU is needed on your laptop — the L4 GPU on the VM does all the rendering and
-sends you a compressed video stream on port 8011.
+**Concept:** The GPU VM runs the NVIDIA USD Viewer container, which renders the 3D scene
+on the L4 GPU and exposes a WebRTC signaling server on port 49100.  No GPU is needed on
+your laptop — the cloud VM does all the rendering.
 
 **Requires:** Phase 2 (VM created), Phase 3 (USD assets in GCS), Phase 4b (Kit image pushed).
 
@@ -392,18 +392,28 @@ bash deploy/03_upload_assets.sh # uploads USD assets to GCS
 bash deploy/05b_deploy_kit_vm.sh
 ```
 
-The deploy script automatically:
-1. Downloads USD assets from GCS to the VM's local disk (~9.4 GB, 5–10 min first run)
-2. Launches the Kit Streaming container with GPU access via CDI device selection
-3. Prints the URL when ready
+The script downloads USD assets (~9.4 GB, 5–10 min first run), then launches the Kit
+container with CDI GPU access and WebRTC signaling on TCP port 49100.
 
-After it completes, open in **Chrome** or **Firefox**:
+### Phase 5c — Deploy Web Viewer (browser client)
+
+The NVIDIA USD Viewer speaks WebRTC — it needs a small web application to serve the
+browser client.  Phase 5c clones NVIDIA's
+[web-viewer-sample](https://github.com/NVIDIA-Omniverse/web-viewer-sample), builds it,
+and runs it on port 8080 as a systemd service.
+
+```bash
+bash deploy/05c_deploy_web_viewer.sh
 ```
-http://<VM_EXTERNAL_IP>:8011
+
+After it completes (~5 min including the npm build), open in **Chrome** or **Firefox**:
+```
+http://<VM_EXTERNAL_IP>:8080
 ```
 
 The 3D DataHall scene loads and streams live. You can orbit, zoom, and see racks highlighted
-red as failure predictions arrive from the inference service.
+red as failure predictions arrive from the inference service.  Allow up to 60 seconds for
+the scene to fully load on first launch.
 
 **Checkpoint:** Browser shows the 3D data center. You can orbit and zoom. ✓
 
@@ -560,7 +570,8 @@ These are open-ended challenges to deepen your understanding:
 | `docker push denied` | Not authenticated to AR | Run `gcloud auth configure-docker us-central1-docker.pkg.dev` |
 | `docker build` fails on COPY | `deploy/inference_server.py` missing | Re-clone the repo — this file must be present |
 | `Model checkpoint not found` | `best_model.pt` not mounted | Run Phase 7 first, then mount: `-v $(pwd)/model_output:/app/model_output` |
-| `Port 8011 refused` | VM firewall or Kit not started | Check `docker logs -f datacenter-kit` on the VM |
+| `Port 8080 refused` | Web viewer not started | Run `bash deploy/05c_deploy_web_viewer.sh` |
+| `Black screen on port 8080` | Kit not finished loading | Wait 60 s and refresh; check `docker logs -f datacenter-kit` on the VM |
 | `Failed to get crate info` on USD open | Assets uploaded with `-z` (gzip encoding); gcsfuse doesn't decompress | Re-upload without `-z`, or let `05b_deploy_kit_vm.sh` download to local disk |
 | `libnvidia-nscq.so not found` on Docker run | Deep Learning VM server driver + CTK version mismatch | `02_gcp_setup.sh` now handles this automatically (CDI mode + disabled nvidia-cdi-refresh) |
 | `NVST_DISCONN_SERVER_VIDEO_ENCODER_INIT_DLL_LOAD_FAILED` | Missing NVENC/NVDEC libs | `02_gcp_setup.sh` installs `libnvidia-encode-570` automatically |

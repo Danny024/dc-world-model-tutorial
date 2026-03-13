@@ -63,7 +63,9 @@ fi
 docker stop datacenter-kit 2>/dev/null || true
 docker rm   datacenter-kit 2>/dev/null || true
 
-# Launch Kit streaming container with GPU, WebRTC on 8011, WebSocket on 8012
+# Launch Kit streaming container with GPU.
+# Port 49100 TCP: WebRTC signaling (WebSocket, browser connects here).
+# Port 49100-49200 UDP: WebRTC media (audio/video streams).
 # Note: use CDI device selector (--device nvidia.com/gpu=all) instead of
 # --gpus all, because the Deep Learning VM uses the server driver variant
 # which lacks some libraries expected by the legacy nvidia-container-toolkit.
@@ -71,8 +73,7 @@ docker run -d \
     --name datacenter-kit \
     --device nvidia.com/gpu=all \
     --restart unless-stopped \
-    -p 8011:8011 \
-    -p 8012:8012 \
+    -p 49100:49100/tcp \
     -p 49100-49200:49100-49200/udp \
     -v "\${ASSETS_DIR}:/mnt/assets:ro" \
     -e ACCEPT_EULA=Y \
@@ -95,16 +96,13 @@ gcloud compute ssh "${VM_NAME}" \
 echo ""
 echo "=== Phase 5b complete ==="
 echo ""
-echo "Kit streaming is live. Open in Chrome or Firefox:"
+echo "Kit streaming backend is live (WebRTC signaling on port 49100)."
 echo ""
-echo "  http://${VM_IP}:8011"
-echo ""
-echo "The scene may take up to 60 seconds to fully load on first launch."
+echo "Next step — deploy the web viewer (browser UI):"
+echo "  bash deploy/05c_deploy_web_viewer.sh"
 echo ""
 echo "Check container logs:"
 echo "  gcloud compute ssh ${VM_NAME} --zone=${GCP_ZONE} -- docker logs -f datacenter-kit"
 echo ""
 echo "Stop the VM when done to avoid charges (~\$0.40/hr):"
 echo "  gcloud compute instances stop ${VM_NAME} --zone=${GCP_ZONE}"
-echo ""
-echo "Next step: python3 deploy/06_generate_failure_data.py"
