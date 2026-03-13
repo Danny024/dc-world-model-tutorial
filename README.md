@@ -152,8 +152,10 @@ dc-world-model-tutorial/
 │   ├── 01_install_gcloud.sh          ← Phase 1: Install Google Cloud CLI
 │   ├── 02_gcp_setup.sh               ← Phase 2: Create cloud infrastructure
 │   ├── 03_upload_assets.sh           ← Phase 3: Upload USD to GCS (instructor)
-│   ├── 04_build_and_push.sh          ← Phase 4: Build & push inference container
-│   ├── 05_deploy_vm.sh               ← Phase 5: Launch streaming on GPU VM
+│   ├── 04_build_and_push.sh          ← Phase 4:  Build & push inference container
+│   ├── 04b_pull_kit_image.sh         ← Phase 4b: Pull Kit Streaming image (needs NGC)
+│   ├── 05_deploy_vm.sh               ← Phase 5:  Deploy inference service to Cloud Run
+│   ├── 05b_deploy_kit_vm.sh          ← Phase 5b: Deploy 3D streaming to GPU VM
 │   ├── 06_generate_failure_data.py   ← Phase 6: Synthetic dataset
 │   ├── 07_world_model.py             ← Phase 7: Transformer model (PyTorch)
 │   ├── 08_vertex_training.py         ← Phase 8: Vertex AI training job
@@ -301,6 +303,27 @@ curl -X POST http://localhost:8080/predict \
 
 ---
 
+### Phase 4b — Pull Kit Streaming Image (3D Visualization, optional)
+
+**Concept:** NVIDIA's pre-built Kit Streaming container is hosted on NGC (NVIDIA GPU Cloud).
+This step pulls it and stores a copy in your own Artifact Registry so the GPU VM can pull it
+without needing NGC credentials on the VM itself.
+
+**Requires:** A free NGC account — [ngc.nvidia.com](https://ngc.nvidia.com) → avatar → Setup → Generate API Key.
+Add the key to `deploy/config.env`:
+```bash
+export NGC_API_KEY="your-key-here"
+```
+
+```bash
+source deploy/config.env
+bash deploy/04b_pull_kit_image.sh
+```
+
+**Checkpoint:** `docker images | grep kit-streaming` shows the image locally. ✓
+
+---
+
 ### Phase 5 — Deploy Inference Service to Cloud Run
 
 **Concept:** Cloud Run is Google's serverless container platform. You give it a Docker
@@ -334,6 +357,37 @@ curl -X POST https://YOUR_SERVICE_URL/predict \
 **Checkpoint:** `curl https://YOUR_SERVICE_URL/health` returns `{"status": "ok"}`. ✓
 
 > **Stop billing when done:** `gcloud run services delete datacenter-inference --region=us-central1`
+
+---
+
+### Phase 5b — Deploy Kit Streaming on GPU VM (3D Visualization, optional)
+
+**Concept:** The GPU VM runs the Kit Streaming container, mounts the USD assets
+from GCS via gcsfuse, and streams the live 3D scene to your browser over WebRTC.
+
+**Requires:** Phase 2 (VM created), Phase 3 (USD assets in GCS), Phase 4b (Kit image pushed).
+
+```bash
+source deploy/config.env
+bash deploy/02_gcp_setup.sh     # creates the GPU VM (if not already done)
+bash deploy/03_upload_assets.sh # uploads USD assets to GCS
+bash deploy/05b_deploy_kit_vm.sh
+```
+
+After it completes, open in Chrome:
+```
+http://<VM_EXTERNAL_IP>:8011
+```
+
+The 3D DataHall scene loads and streams live. You can orbit, zoom, and see racks highlighted
+red as failure predictions arrive from the inference service.
+
+**Checkpoint:** Browser shows the 3D data center. You can orbit and zoom. ✓
+
+> **Stop the VM when done** to avoid charges (~$0.40/hr):
+> ```bash
+> gcloud compute instances stop datacenter-kit-vm --zone=us-central1-a
+> ```
 
 ---
 
