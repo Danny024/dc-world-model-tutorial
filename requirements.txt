@@ -17,6 +17,9 @@ pandas>=2.0.0
 google-cloud-storage>=2.14.0
 google-cloud-aiplatform>=1.42.0
 
+# ── Inference Server ──────────────────────────────────────────────────────────
+flask>=3.0.0
+
 # ── Utilities ─────────────────────────────────────────────────────────────────
 # For reading TOML config files (Python 3.10 has tomllib built-in)
 tomli>=2.0.0; python_version < "3.11"

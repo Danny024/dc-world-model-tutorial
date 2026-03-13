@@ -24,8 +24,8 @@ This is the exact workflow used by robotics and AI teams at companies like NVIDI
 ┌─────────────────────────────────────────────────────────────────────┐
 │                      LOCAL MACHINE (you)                            │
 │                                                                     │
-│  kit-app-template ──► repo.sh build ──► Docker image               │
-│  DataHall_Full_01.usd ──────────────────► GCS bucket               │
+│  Dockerfile ──► docker build ──► datacenter-inference image         │
+│  DataHall_Full_01.usd ──────────────────────► GCS bucket           │
 └───────────────────────────────┬─────────────────────────────────────┘
                                 │  Docker push / gsutil cp
                                 ▼
@@ -123,6 +123,7 @@ modify or delete anything in the bucket.
 | Google Cloud account | Deploy + train in the cloud (Phases 4–9) | [console.cloud.google.com](https://console.cloud.google.com) |
 | GitHub account | Fork this repo | [github.com](https://github.com) |
 | Python 3.10+ | Run training scripts | Usually pre-installed |
+| Docker | Build the inference container (Phase 4) | [docs.docker.com/get-docker](https://docs.docker.com/get-docker/) |
 
 ### Estimated Cloud Costs
 | Resource | Cost |
@@ -142,6 +143,7 @@ modify or delete anything in the bucket.
 dc-world-model-tutorial/
 │
 ├── README.md                    ← You are here
+├── Dockerfile                   ← ML inference service container (Phase 4)
 │
 ├── deploy/                      ← All automation scripts (run in order)
 │   ├── config.env                    ← Instructor: edit this first
@@ -150,12 +152,13 @@ dc-world-model-tutorial/
 │   ├── 01_install_gcloud.sh          ← Phase 1: Install Google Cloud CLI
 │   ├── 02_gcp_setup.sh               ← Phase 2: Create cloud infrastructure
 │   ├── 03_upload_assets.sh           ← Phase 3: Upload USD to GCS (instructor)
-│   ├── 04_build_and_push.sh          ← Phase 4: Build Docker image
+│   ├── 04_build_and_push.sh          ← Phase 4: Build & push inference container
 │   ├── 05_deploy_vm.sh               ← Phase 5: Launch streaming on GPU VM
 │   ├── 06_generate_failure_data.py   ← Phase 6: Synthetic dataset
 │   ├── 07_world_model.py             ← Phase 7: Transformer model (PyTorch)
 │   ├── 08_vertex_training.py         ← Phase 8: Vertex AI training job
-│   └── 09_inference_config.toml      ← Phase 9: Connect inference to viewer
+│   ├── 09_inference_config.toml      ← Phase 9: Connect inference to viewer
+│   └── inference_server.py           ← Flask REST API wrapping the world model
 │
 ├── docs/                        ← Deep-dive guides for each phase
 │   ├── 01_what_is_a_digital_twin.md
@@ -255,11 +258,12 @@ bash deploy/03_upload_assets.sh
 
 ---
 
-### Phase 4 — Build and Push Docker Container
+### Phase 4 — Build and Push the ML Inference Container
 
-**Concept:** We package the entire NVIDIA Kit application (USD Explorer + our config)
-into a Docker container. This container is self-contained — it runs identically on
-your laptop or on a cloud VM with a GPU.
+**Concept:** We package the Python inference server into a Docker container.
+This container exposes a REST API that accepts a window of sensor readings and
+returns failure probabilities — the same predictions that will later power the
+digital twin visualization. No NVIDIA SDK or NGC account is required.
 
 ```bash
 source deploy/config.env
@@ -267,11 +271,33 @@ bash deploy/04_build_and_push.sh
 ```
 
 This runs:
-1. `./repo.sh build` — compiles the Kit extensions
-2. `./repo.sh package_container` — wraps everything in a Docker image
-3. `docker push` — uploads the image to Artifact Registry
+1. `docker build` — builds the `Dockerfile` in the repo root
+2. Tags the image for your Artifact Registry
+3. `docker push` — uploads it to Artifact Registry
 
-**Checkpoint:** `docker images | grep datacenter-kit` shows the image. ✓
+**Test it locally after build:**
+```bash
+docker run -p 8080:8080 \
+  -v $(pwd)/model_output:/app/model_output \
+  datacenter-inference:latest
+
+# In another terminal:
+curl http://localhost:8080/health
+# → {"model_loaded": true, "status": "ok"}
+
+curl -X POST http://localhost:8080/predict \
+  -H "Content-Type: application/json" \
+  -d '{"window": [[23.4,5.82,0.97,0.42],[24.1,5.9,0.96,0.44],[25.0,6.1,0.95,0.51],[26.2,6.3,0.94,0.55],[27.8,6.6,0.93,0.60],[29.5,6.9,0.91,0.65],[31.2,7.1,0.89,0.70],[33.0,7.4,0.87,0.74],[35.1,7.7,0.84,0.78],[37.4,8.0,0.81,0.82],[40.0,8.4,0.77,0.86],[43.2,8.9,0.72,0.90]]}'
+# → {"1h": 0.83, "6h": 0.91, "24h": 0.95}
+```
+
+**Checkpoint:** `docker images | grep datacenter-inference` shows the image. ✓
+
+> **Kit Streaming (optional):** If you also want the 3D digital twin visualization
+> on the GPU VM (Phase 5), that requires an NVIDIA NGC account to pull the
+> `nvcr.io/nvidia/omniverse/kit-streaming` base image. A free NGC account can be
+> created at [ngc.nvidia.com](https://ngc.nvidia.com). The rest of the tutorial
+> (Phases 6–9) works without it.
 
 ---
 
@@ -441,6 +467,8 @@ These are open-ended challenges to deepen your understanding:
 | `CUDA out of memory` | Batch size too large | Reduce `BATCH_SIZE` in `07_world_model.py` |
 | `VM not found` | Wrong zone | Check `GCP_ZONE` in `config.env` |
 | `docker push denied` | Not authenticated to AR | Run `gcloud auth configure-docker us-central1-docker.pkg.dev` |
+| `docker build` fails on COPY | `deploy/inference_server.py` missing | Re-clone the repo — this file must be present |
+| `Model checkpoint not found` | `best_model.pt` not mounted | Run Phase 7 first, then mount: `-v $(pwd)/model_output:/app/model_output` |
 | `Port 8011 refused` | VM firewall or Kit not started | Check `docker logs -f datacenter-kit` on the VM |
 | `KeyError: AIP_TRAINING_DATA_URI` | Not running inside Vertex AI | This script is for Vertex AI, not local execution |
 
