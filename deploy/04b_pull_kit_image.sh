@@ -10,9 +10,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 source "${SCRIPT_DIR}/config.env"
 
-# The exact tag varies — override with: NGC_KIT_TAG=some-tag bash 04b_pull_kit_image.sh
-NGC_KIT_TAG="${NGC_KIT_TAG:-latest}"
-NVIDIA_KIT_IMAGE="nvcr.io/nvidia/omniverse/kit-streaming:${NGC_KIT_TAG}"
+NVIDIA_KIT_IMAGE="nvcr.io/nvidia/omniverse/usd-viewer:109.0.2"
 
 echo "=== Phase 4b: Pull Kit Streaming Image and Push to Artifact Registry ==="
 echo "  Source : ${NVIDIA_KIT_IMAGE}"
@@ -41,8 +39,8 @@ echo "NGC login successful."
 echo ""
 echo "Pulling NVIDIA Kit Streaming image (~10 GB, uses layer cache on repeat runs)..."
 echo ""
-echo "NOTE: If you see 'Access Denied', you must first accept the EULA at:"
-echo "  https://catalog.ngc.nvidia.com/orgs/nvidia/containers/kit-streaming"
+echo "NOTE: If you see 'Access Denied', accept the EULA at:"
+echo "  https://catalog.ngc.nvidia.com/orgs/nvidia/containers/usd-viewer"
 echo "  → click 'Get Container' → accept the licence → then re-run this script."
 echo ""
 docker pull "${NVIDIA_KIT_IMAGE}"

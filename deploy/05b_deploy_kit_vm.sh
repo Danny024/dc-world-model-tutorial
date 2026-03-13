@@ -58,14 +58,15 @@ docker run -d \
     -p 8012:8012 \
     -p 49100-49200:49100-49200/udp \
     -v \${MOUNT_DIR}:/mnt/assets:ro \
-    -e OMNI_SERVER="" \
     -e ACCEPT_EULA=Y \
     ${IMAGE_URI} \
     --/app/auto_load_usd="/mnt/assets/Datacenter_NVD@10012/Assets/DigitalTwin/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" \
     --/app/streaming/enabled=true \
     --/app/streaming/webrtc/enabled=true \
     --/app/streaming/webrtc/port=8012 \
-    --/app/streaming/http/port=8011
+    --/app/streaming/http/port=8011 \
+    --/app/window/width=1920 \
+    --/app/window/height=1080
 
 echo "Container started. Waiting for Kit to initialise (~60 seconds)..."
 sleep 10
