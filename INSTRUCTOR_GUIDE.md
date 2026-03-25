@@ -802,6 +802,29 @@ gcloud compute regions describe us-central1 \
 
 ### Infrastructure issues (instructor-level)
 
+**"Cloud Build fails: Permission denied on artifactregistry.repositories.uploadArtifacts"**
+- The Cloud Build service account does not have write access to Artifact Registry.
+- This is now fixed in `02_gcp_setup.sh` (Phase 2 grants the role automatically).
+- If the project was set up before this fix, run these three commands once in Cloud Shell:
+  ```bash
+  PROJECT_NUMBER=$(gcloud projects describe hmth391 --format="value(projectNumber)")
+  gcloud projects add-iam-policy-binding hmth391 \
+      --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+      --role="roles/artifactregistry.writer"
+  gcloud projects add-iam-policy-binding hmth391 \
+      --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+      --role="roles/artifactregistry.writer"
+  gcloud projects add-iam-policy-binding hmth391 \
+      --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+      --role="roles/logging.logWriter"
+  ```
+
+**"Phase 4 script fails with 'connection refused' when pushing Docker image from Cloud Shell"**
+- Cloud Shell's Docker daemon cannot push directly to Artifact Registry (port 443 refused).
+- `04_build_and_push.sh` detects Cloud Shell automatically and uses `gcloud builds submit`
+  instead of `docker push`. If a student gets this error they are on an older clone —
+  have them `git pull` and re-run.
+
 **"GPU VM fails to start Kit due to nvidia-smi errors"**
 - CDI mode issue. SSH into VM and run:
   ```bash
