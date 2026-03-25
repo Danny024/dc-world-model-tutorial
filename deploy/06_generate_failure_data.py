@@ -21,7 +21,7 @@ import tempfile
 import pathlib
 
 # ── Configuration ─────────────────────────────────────────────────────────────
-GCS_BUCKET      = os.environ.get("GCS_BUCKET", "YOUR_PROJECT_ID-omniverse-assets")
+GCS_BUCKET      = os.environ.get("GCS_BUCKET", "hmth391-omniverse-assets")
 GCS_OUTPUT_PATH = f"gs://{GCS_BUCKET}/training-data/sensor_timeseries.csv"
 USD_STAGE_PATH  = (
     "/mnt/assets/Datacenter_NVD@10012/Assets/DigitalTwin/Assets/Datacenter"
@@ -191,7 +191,7 @@ def save_csv(rows: list[dict], path: str):
 def upload_to_gcs(local_path: str, gcs_path: str):
     import subprocess
     print(f"Uploading to {gcs_path}...")
-    subprocess.run(["gsutil", "cp", local_path, gcs_path], check=True)
+    subprocess.run(["gcloud", "storage", "cp", local_path, gcs_path], check=True)
     print("Upload complete.")
 
 
