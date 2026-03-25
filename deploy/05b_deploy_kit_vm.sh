@@ -46,14 +46,14 @@ docker pull ${IMAGE_URI}
 # gsutil cp decompresses Content-Encoding:gzip files automatically,
 # which is required because gcsfuse does NOT decompress gzip-encoded files
 # and USD Kit would fail to open them otherwise.
-ASSETS_DIR=/mnt/local-assets/${GCS_BUCKET}
-if [ ! -d "\${ASSETS_DIR}/Datacenter_NVD@10012" ]; then
-    echo "Downloading USD assets from GCS (~9.4 GB, ~5-10 min)..."
+ASSETS_DIR=/mnt/local-assets/DigitalTwin
+if [ ! -f "\${ASSETS_DIR}/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" ]; then
+    echo "Downloading USD assets from GCS (~9.6 GB, ~5-10 min)..."
     sudo mkdir -p "/mnt/local-assets"
     sudo chmod 777 "/mnt/local-assets"
-    # gsutil cp automatically decompresses Content-Encoding:gzip objects;
-    # gcsfuse does NOT, so we must use local disk, not gcsfuse, for USD assets.
-    gsutil -m cp -r "gs://${GCS_BUCKET}" "/mnt/local-assets/"
+    # Use gcloud storage (gsutil is deprecated in SDK 400+).
+    # Assets are stored uncompressed so Kit can read them directly.
+    gcloud storage cp -r "gs://${GCS_BUCKET}/DigitalTwin" "/mnt/local-assets/"
     echo "USD assets downloaded to \${ASSETS_DIR}"
 else
     echo "USD assets already present at \${ASSETS_DIR} — skipping download."
@@ -77,7 +77,7 @@ docker run -d \
     -p 49100-49200:49100-49200/udp \
     -v "\${ASSETS_DIR}:/mnt/assets:ro" \
     -e ACCEPT_EULA=Y \
-    -e USD_PATH="/mnt/assets/Datacenter_NVD@10012/Assets/DigitalTwin/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" \
+    -e USD_PATH="/mnt/assets/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" \
     ${IMAGE_URI}
 
 echo "Container started. Waiting for Kit to initialise (~60 seconds)..."

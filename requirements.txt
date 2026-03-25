@@ -19,6 +19,13 @@ google-cloud-aiplatform>=1.42.0
 
 # ── Inference Server ──────────────────────────────────────────────────────────
 flask>=3.0.0
+requests>=2.31.0
+
+# ── Cloud Auth ────────────────────────────────────────────────────────────────
+google-auth>=2.20.0
+
+# ── Real-time Digital Twin ────────────────────────────────────────────────────
+websockets>=12.0
 
 # ── Utilities ─────────────────────────────────────────────────────────────────
 # For reading TOML config files (Python 3.10 has tomllib built-in)

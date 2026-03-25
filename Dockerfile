@@ -32,11 +32,7 @@ RUN pip install --no-cache-dir \
         torch --index-url https://download.pytorch.org/whl/cpu
 
 COPY requirements.txt .
-RUN pip install --no-cache-dir \
-        numpy \
-        pandas \
-        flask>=3.0.0 \
-        google-cloud-storage
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Copy model source and inference server
 COPY deploy/07_world_model.py  ./world_model.py

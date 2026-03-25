@@ -60,6 +60,11 @@ def build_training_package(staging_dir: pathlib.Path) -> pathlib.Path:
 
     (trainer / "__init__.py").write_text("")
 
+    # Bundle world_model.py inside the trainer package so Vertex AI can find it
+    # without needing the full repo on the worker node.
+    deploy_dir = pathlib.Path(__file__).parent
+    (trainer / "world_model.py").write_bytes((deploy_dir / "07_world_model.py").read_bytes())
+
     # task.py — reads env vars set by Vertex AI, then delegates to world_model
     (trainer / "task.py").write_text(textwrap.dedent("""\
         import os, sys, subprocess, pathlib
@@ -82,9 +87,8 @@ def build_training_package(staging_dir: pathlib.Path) -> pathlib.Path:
         client.bucket(bucket_name).blob(blob_name).download_to_filename(LOCAL_CSV)
         print("Download complete.")
 
-        # ── Add repo to path so we can import world_model ────────────────────
-        repo_root = pathlib.Path(__file__).resolve().parent.parent.parent
-        sys.path.insert(0, str(repo_root / "deploy"))
+        # ── world_model.py is bundled alongside this file in the trainer package
+        sys.path.insert(0, str(pathlib.Path(__file__).parent))
 
         from world_model import train   # noqa: E402
         train(
@@ -98,7 +102,7 @@ def build_training_package(staging_dir: pathlib.Path) -> pathlib.Path:
         model_pt  = pathlib.Path(OUTPUT_DIR) / "best_model.pt"
         if model_pt.exists() and MODEL_GCS:
             import subprocess as sp
-            sp.run(["gsutil", "cp", str(model_pt), MODEL_GCS], check=True)
+            sp.run(["gcloud", "storage", "cp", str(model_pt), MODEL_GCS], check=True)
             print(f"Model uploaded to {MODEL_GCS}")
     """))
 
@@ -177,9 +181,9 @@ def deploy_endpoint(model: aiplatform.Model) -> aiplatform.Endpoint:
     model.deploy(
         endpoint             = endpoint,
         deployed_model_display_name = "datacenter-failure-predictor-v1",
-        machine_type         = "n1-standard-4",
-        accelerator_type     = "NVIDIA_TESLA_T4",
-        accelerator_count    = 1,
+        machine_type         = "n1-standard-4",   # CPU-only — inference uses Cloud Run
+        min_replica_count    = 0,                 # scale to zero when idle
+        max_replica_count    = 1,
         traffic_percentage   = 100,
         sync                 = True,
     )

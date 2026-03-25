@@ -1,0 +1,13 @@
+# Jetson Nano edge inference dependencies
+# PyTorch is already provided by the l4t-pytorch base image
+# DO NOT add torch here — it would overwrite the ARM64 version
+
+numpy>=1.24.0
+pandas>=2.0.0
+flask>=3.0.0
+requests>=2.31.0
+google-cloud-storage>=2.14.0
+google-auth>=2.20.0
+websockets>=12.0
+# tomli only needed for Python < 3.11
+tomli>=2.0.0; python_version < "3.11"

@@ -1,0 +1,61 @@
+# ============================================================
+# Dockerfile.jetson — Edge Inference Container for Jetson Nano
+# ============================================================
+# Target platform : linux/arm64 (NVIDIA Jetson, JetPack 5.1.3)
+# Base image      : NVIDIA L4T PyTorch (includes CUDA 11.4 + cuDNN 8)
+#
+# This image is built for Jetson Nano edge deployment.
+# It runs the same inference_server.py as the Cloud Run container but:
+#   - Uses the ONNX Runtime GPU backend (TensorRT) for 3–5× faster inference
+#   - Is compiled for ARM64 (aarch64) architecture
+#   - Loads the ONNX model from a GCS path or local volume mount
+#
+# Build (on an x86 machine with Docker buildx):
+#   See deploy/build_edge_image.sh
+#
+# Run on Jetson Nano:
+#   docker run -d \
+#     --runtime nvidia \
+#     -p 8080:8080 \
+#     -e MODEL_ONNX_PATH=/app/models/world_model.onnx \
+#     -v /path/to/models:/app/models \
+#     us-central1-docker.pkg.dev/hmth391/world-model-repo/datacenter-inference:jetson-latest
+# ============================================================
+
+FROM nvcr.io/nvidia/l4t-pytorch:r35.4.1-pth2.1-py3
+
+# Install ONNX Runtime with TensorRT provider for Jetson (ARM64 wheel)
+# The version must match the JetPack / CUDA version on the Jetson
+ARG ONNXRUNTIME_VERSION=1.16.3
+RUN pip3 install --no-cache-dir \
+    "https://nvidia.box.com/shared/static/zostg6agk5e84bdjnfafoenmlzrl8rjf.whl" \
+    || pip3 install --no-cache-dir onnxruntime-gpu==${ONNXRUNTIME_VERSION}
+
+# Install remaining Python dependencies (lightweight — PyTorch already in base)
+COPY requirements_jetson.txt /tmp/requirements_jetson.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements_jetson.txt
+
+WORKDIR /app
+
+# Copy inference code
+COPY deploy/07_world_model.py  ./world_model.py
+COPY deploy/dino_encoder.py    ./dino_encoder.py
+COPY deploy/inference_server.py ./inference_server.py
+
+# Model loading priority (same as Cloud Run container):
+#   1. MODEL_ONNX_PATH env var → ONNX Runtime (fast, TensorRT)
+#   2. MODEL_PATH env var      → PyTorch checkpoint (fallback)
+#   3. /app/model_output/best_model.pt
+#   4. MODEL_GCS_URI env var   → download from GCS
+
+ENV MODEL_ONNX_PATH=""
+ENV MODEL_PATH=""
+ENV MODEL_GCS_URI=""
+ENV PORT=8080
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+CMD ["python3", "inference_server.py"]
