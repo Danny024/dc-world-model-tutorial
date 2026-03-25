@@ -15,7 +15,7 @@ REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
 source "${SCRIPT_DIR}/config.env"
 
 echo "=== Phase 4: Build and Push ML Inference Container ==="
-echo "  Image : ${INFERENCE_IMAGE_URI}"
+echo "  Image : ${IMAGE_URI}"
 echo "  Source: ${REPO_ROOT}/Dockerfile"
 echo ""
 
@@ -27,8 +27,8 @@ echo "Build complete."
 # ── 2. Tag for Artifact Registry ──────────────────────────────────────────────
 echo ""
 echo "Tagging image for Artifact Registry..."
-docker tag "datacenter-inference:latest" "${INFERENCE_IMAGE_URI}"
-echo "Tagged: ${INFERENCE_IMAGE_URI}"
+docker tag "datacenter-inference:latest" "${IMAGE_URI}"
+echo "Tagged: ${IMAGE_URI}"
 
 # ── 3. Authenticate Docker with Artifact Registry ─────────────────────────────
 echo ""
@@ -38,11 +38,11 @@ gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 # ── 4. Push ───────────────────────────────────────────────────────────────────
 echo ""
 echo "Pushing to Artifact Registry..."
-docker push "${INFERENCE_IMAGE_URI}"
+docker push "${IMAGE_URI}"
 
 echo ""
 echo "=== Phase 4 complete ==="
-echo "Image pushed: ${INFERENCE_IMAGE_URI}"
+echo "Image pushed: ${IMAGE_URI}"
 echo ""
 echo "Test locally:"
 echo "  docker run -p 8080:8080 \\"
@@ -51,7 +51,7 @@ echo "    datacenter-inference:latest"
 echo ""
 echo "Deploy to Cloud Run (serverless, scales to zero):"
 echo "  gcloud run deploy datacenter-inference \\"
-echo "    --image ${INFERENCE_IMAGE_URI} \\"
+echo "    --image ${IMAGE_URI} \\"
 echo "    --region ${GCP_REGION} \\"
 echo "    --platform managed \\"
 echo "    --set-env-vars MODEL_GCS_URI=${MODEL_ARTEFACT_GCS}/best_model.pt \\"

@@ -34,8 +34,10 @@ $size = (Get-ChildItem $USD_ASSETS_LOCAL -Recurse -File | Measure-Object -Proper
 Write-Host "Source size: $([math]::Round($size/1GB, 2)) GB"
 Write-Host ""
 
-# Idempotency check
+# Idempotency check — suppress error when file doesn't exist yet (expected on first run)
+$ErrorActionPreference = "Continue"
 $exists = gcloud storage ls $USD_STAGE_GCS 2>$null
+$ErrorActionPreference = "Stop"
 if ($LASTEXITCODE -eq 0) {
     Write-Host "[OK] Stage file already exists in GCS: $USD_STAGE_GCS" -ForegroundColor Green
     Write-Host "     Skipping upload. To force re-upload, run:"
