@@ -14,7 +14,7 @@ NVIDIA_KIT_IMAGE="nvcr.io/nvidia/omniverse/usd-viewer:109.0.2"
 
 echo "=== Phase 4b: Pull Kit Streaming Image and Push to Artifact Registry ==="
 echo "  Source : ${NVIDIA_KIT_IMAGE}"
-echo "  Target : ${IMAGE_URI}"
+echo "  Target : ${KIT_IMAGE_URI}"
 echo ""
 
 # ── 1. Validate NGC API key ───────────────────────────────────────────────────
@@ -49,8 +49,8 @@ echo "Pull complete."
 # ── 4. Tag for Artifact Registry ──────────────────────────────────────────────
 echo ""
 echo "Tagging for Artifact Registry..."
-docker tag "${NVIDIA_KIT_IMAGE}" "${IMAGE_URI}"
-echo "Tagged: ${IMAGE_URI}"
+docker tag "${NVIDIA_KIT_IMAGE}" "${KIT_IMAGE_URI}"
+echo "Tagged: ${KIT_IMAGE_URI}"
 
 # ── 5. Authenticate with Artifact Registry and push ───────────────────────────
 echo ""
@@ -59,10 +59,10 @@ gcloud auth configure-docker "${GCP_REGION}-docker.pkg.dev" --quiet
 
 echo ""
 echo "Pushing to Artifact Registry..."
-docker push "${IMAGE_URI}"
+docker push "${KIT_IMAGE_URI}"
 
 echo ""
 echo "=== Phase 4b complete ==="
-echo "Kit Streaming image pushed: ${IMAGE_URI}"
+echo "Kit Streaming image pushed: ${KIT_IMAGE_URI}"
 echo ""
 echo "Next step: bash deploy/05b_deploy_kit_vm.sh"

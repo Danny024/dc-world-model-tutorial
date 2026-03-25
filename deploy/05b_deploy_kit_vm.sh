@@ -21,7 +21,7 @@ source "${SCRIPT_DIR}/config.env"
 
 echo "=== Phase 5b: Deploy Kit Streaming on GPU VM ==="
 echo "  VM   : ${VM_NAME} (${GCP_ZONE})"
-echo "  Image: ${IMAGE_URI}"
+echo "  Image: ${KIT_IMAGE_URI}"
 echo ""
 
 # ── 1. Get VM external IP ─────────────────────────────────────────────────────
@@ -40,7 +40,7 @@ set -euo pipefail
 gcloud auth configure-docker ${GCP_REGION}-docker.pkg.dev --quiet
 
 # Pull the Kit Streaming image
-docker pull ${IMAGE_URI}
+docker pull ${KIT_IMAGE_URI}
 
 # Download USD assets from GCS to local disk.
 # gsutil cp decompresses Content-Encoding:gzip files automatically,
@@ -78,7 +78,7 @@ docker run -d \
     -v "\${ASSETS_DIR}:/mnt/assets:ro" \
     -e ACCEPT_EULA=Y \
     -e USD_PATH="/mnt/assets/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" \
-    ${IMAGE_URI}
+    ${KIT_IMAGE_URI}
 
 echo "Container started. Waiting for Kit to initialise (~60 seconds)..."
 sleep 10

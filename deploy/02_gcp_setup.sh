@@ -36,18 +36,33 @@ else
     echo "Bucket created."
 fi
 
-# ── 4. Artifact Registry repository ─────────────────────────────────────────
-if gcloud artifacts repositories describe "${AR_REPO}" \
+# ── 4. Artifact Registry repositories ───────────────────────────────────────
+# Kit streaming repo (Phase 4b — NVIDIA usd-viewer image)
+if gcloud artifacts repositories describe "${AR_REPO_KIT}" \
     --location="${GCP_REGION}" --project="${GCP_PROJECT_ID}" &>/dev/null; then
-    echo "Artifact Registry repo '${AR_REPO}' already exists — skipping."
+    echo "Artifact Registry repo '${AR_REPO_KIT}' already exists — skipping."
 else
-    echo "Creating Artifact Registry repository '${AR_REPO}'..."
-    gcloud artifacts repositories create "${AR_REPO}" \
+    echo "Creating Artifact Registry repository '${AR_REPO_KIT}'..."
+    gcloud artifacts repositories create "${AR_REPO_KIT}" \
         --repository-format=docker \
         --location="${GCP_REGION}" \
-        --description="NVIDIA Omniverse Kit containers" \
+        --description="NVIDIA Omniverse Kit Streaming containers" \
         --project="${GCP_PROJECT_ID}"
-    echo "Repository created."
+    echo "Repository '${AR_REPO_KIT}' created."
+fi
+
+# World model inference repo (Phase 4 — CPU inference image + edge artefacts)
+if gcloud artifacts repositories describe "${AR_REPO_MODELS}" \
+    --location="${GCP_REGION}" --project="${GCP_PROJECT_ID}" &>/dev/null; then
+    echo "Artifact Registry repo '${AR_REPO_MODELS}' already exists — skipping."
+else
+    echo "Creating Artifact Registry repository '${AR_REPO_MODELS}'..."
+    gcloud artifacts repositories create "${AR_REPO_MODELS}" \
+        --repository-format=docker \
+        --location="${GCP_REGION}" \
+        --description="World model inference image and edge artefacts" \
+        --project="${GCP_PROJECT_ID}"
+    echo "Repository '${AR_REPO_MODELS}' created."
 fi
 
 # Configure Docker auth for Artifact Registry
@@ -183,6 +198,30 @@ add_firewall_rule "allow-kit-webrtc-udp" \
     --rules=udp:49100-49200 \
     --source-ranges=0.0.0.0/0 \
     --description="Kit WebRTC UDP media ports"
+
+# ── 7. IAM grants for Cloud Build ────────────────────────────────────────────
+# Cloud Build needs Artifact Registry write access to push images.
+# The Compute Engine default SA is what Cloud Build runs as when the
+# Cloud Build SA is not explicitly configured.
+echo "Configuring Cloud Build IAM permissions..."
+PROJECT_NUMBER=$(gcloud projects describe "${GCP_PROJECT_ID}" \
+    --format="value(projectNumber)")
+
+# Cloud Build service account
+gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+    --member="serviceAccount:${PROJECT_NUMBER}@cloudbuild.gserviceaccount.com" \
+    --role="roles/artifactregistry.writer" --quiet 2>/dev/null || true
+
+# Compute Engine default service account (fallback SA used by Cloud Build)
+gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/artifactregistry.writer" --quiet 2>/dev/null || true
+
+gcloud projects add-iam-policy-binding "${GCP_PROJECT_ID}" \
+    --member="serviceAccount:${PROJECT_NUMBER}-compute@developer.gserviceaccount.com" \
+    --role="roles/logging.logWriter" --quiet 2>/dev/null || true
+
+echo "Cloud Build IAM configured."
 
 echo ""
 echo "=== Phase 2 complete ==="

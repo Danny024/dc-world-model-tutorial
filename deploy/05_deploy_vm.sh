@@ -18,7 +18,7 @@ MODEL_GCS_URI="${MODEL_ARTEFACT_GCS}/best_model.pt"
 
 echo "=== Phase 5: Deploy Inference Service to Cloud Run ==="
 echo "  Service : ${SERVICE_NAME}"
-echo "  Image   : ${INFERENCE_IMAGE_URI}"
+echo "  Image   : ${IMAGE_URI}"
 echo "  Model   : ${MODEL_GCS_URI}"
 echo "  Region  : ${GCP_REGION}"
 echo ""
@@ -32,7 +32,7 @@ gcloud services enable run.googleapis.com \
 echo ""
 echo "Deploying to Cloud Run (this takes ~2 minutes on first deploy)..."
 gcloud run deploy "${SERVICE_NAME}" \
-    --image="${INFERENCE_IMAGE_URI}" \
+    --image="${IMAGE_URI}" \
     --region="${GCP_REGION}" \
     --project="${GCP_PROJECT_ID}" \
     --platform=managed \
