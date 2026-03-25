@@ -206,7 +206,85 @@ gcloud compute instances describe datacenter-kit-vm \
 
 ---
 
-## 3. Before Each Class Session
+## 3. Thursday Morning — Class Day Checklist
+
+**Infrastructure confirmed (from Nolan Code):**
+- 16× NVIDIA A100 40GB quota — Vertex AI training ✓
+- 16× NVIDIA L4 quota — GPU VM for 3D viewer ✓
+- 20× e2-micro Scholar workstations — hot by **07:30 AM EST**
+- All resources in project `hmth391`, zone `us-central1-a`
+
+> **A100 variant:** Always use `a2-highgpu-1g` + `NVIDIA_TESLA_A100` (40GB).
+> The 80GB variant (`a2-ultragpu-1g`) is still in preliminary processing — do not use it.
+
+### 07:00 AM — Instructor pre-class (30 min before students arrive)
+
+```bash
+# 1. Start the GPU VM
+gcloud compute instances start datacenter-kit-vm --zone=us-central1-a
+
+# 2. Verify Cloud Run is healthy
+SERVICE_URL=$(gcloud run services describe datacenter-inference \
+  --region=us-central1 --format="get(status.url)")
+curl "${SERVICE_URL}/health"
+# → {"status": "ok", "model_loaded": true}
+
+# 3. Get the GPU VM IP — write it on the board for students
+gcloud compute instances describe datacenter-kit-vm \
+  --zone=us-central1-a \
+  --format="get(networkInterfaces[0].accessConfigs[0].natIP)"
+
+# 4. Open the 3D viewer to confirm it loads
+# http://VM_EXTERNAL_IP:8080
+
+# 5. Verify the 20 student workstations are running
+gcloud compute instances list --filter="name~scholar-workstation" --zones=us-central1-a
+```
+
+### Setting up the 20 Scholar workstations
+
+The e2-micro VMs are provisioned by Google/Nolan. Run the setup script on all of them at once before students sit down:
+
+```bash
+# Copy setup script to each VM and run it in parallel
+for i in $(seq -w 1 20); do
+    gcloud compute scp deploy/scholar_workstation_setup.sh \
+        scholar-workstation-${i}:/tmp/ --zone=us-central1-a --quiet 2>/dev/null &
+done
+wait
+echo "Scripts copied."
+
+for i in $(seq -w 1 20); do
+    gcloud compute ssh scholar-workstation-${i} --zone=us-central1-a \
+        --command="bash /tmp/scholar_workstation_setup.sh" &
+done
+wait
+echo "All workstations configured."
+```
+
+Each workstation will have:
+- Repo cloned to `~/dc-world-model-tutorial`
+- `config.env` sourced on every login
+- All Python packages installed (excluding PyTorch — too large for 1 GB RAM)
+- `gcloud` configured for project `hmth391`
+
+Students still need to run `gcloud auth login` on their assigned workstation.
+
+### What each workstation is used for
+
+e2-micro VMs have 2 vCPU and 1 GB RAM — **not for local training**. They are used for:
+
+| Phase | Runs on workstation | Runs in cloud |
+|---|---|---|
+| Phase 6 — data generation | `python3 deploy/06_generate_failure_data.py` | — |
+| Phase 7 — quick demo (5 epochs) | `python3 deploy/07_world_model.py --epochs 5` | — |
+| Phase 8 — full training | Submit job only | Vertex AI A100 |
+| Phase 9 — bridge script | `python3 deploy/09_inference_bridge.py` | Cloud Run |
+| 3D viewer | Browser → `http://VM_IP:8080` | GPU VM L4 |
+
+---
+
+## Before Each Class Session (General)
 
 Quick 10-minute pre-class checklist:
 

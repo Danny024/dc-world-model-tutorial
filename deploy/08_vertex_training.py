@@ -38,7 +38,10 @@ ENDPOINT_DISPLAY    = "datacenter-failure-predictor"
 TRAIN_IMAGE         = "us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-1:latest"
 SERVE_IMAGE         = "us-docker.pkg.dev/vertex-ai/prediction/pytorch-gpu.2-1:latest"
 
-MACHINE_TYPE        = "a2-highgpu-1g"   # A100 GPU
+# ── A100 40GB (confirmed quota: 16x in us-central1-a) ────────────────────────
+# Use a2-highgpu-1g  + NVIDIA_TESLA_A100  → A100 40GB  ✓  (quota confirmed)
+# Do NOT use a2-ultragpu-1g + NVIDIA_A100_80GB          → 80GB still pending
+MACHINE_TYPE        = "a2-highgpu-1g"
 ACCELERATOR_TYPE    = "NVIDIA_TESLA_A100"
 ACCELERATOR_COUNT   = 1
 
