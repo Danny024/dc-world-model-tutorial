@@ -28,42 +28,17 @@ while True: time.sleep(3600)
 sleep 2
 echo "Persistenced socket: $(ls -la /run/nvidia-persistenced/socket 2>/dev/null || echo MISSING)"
 
-# ── 2. Clean CDI spec — remove entries for files that don't exist ─────────────
-echo "=== Cleaning CDI spec of missing file references ==="
-sudo python3 - << 'PYEOF'
-import os, sys
-
-def clean_spec(path):
-    try:
-        with open(path) as f:
-            content = f.read()
-    except FileNotFoundError:
-        print(f"  {path}: not found, skipping")
-        return
-
-    lines = content.splitlines()
-    cleaned = []
-    skip_next = False
-    removed = 0
-
-    for i, line in enumerate(lines):
-        # Look for hostPath entries pointing to non-existent files
-        stripped = line.strip()
-        if stripped.startswith('hostPath:'):
-            path_val = stripped.split(':', 1)[1].strip().strip('"').strip("'")
-            if path_val and not os.path.exists(path_val):
-                removed += 1
-                continue  # drop this line
-        cleaned.append(line)
-
-    with open(path, 'w') as f:
-        f.write('\n'.join(cleaned) + '\n')
-    print(f"  {path}: removed {removed} missing-path entries")
-
-clean_spec('/etc/cdi/nvidia.yaml')
-clean_spec('/run/cdi/nvidia.yaml')
-print("CDI spec cleaned.")
-PYEOF
+# ── 2. Create dummy files for all missing CDI hostPath entries ────────────────
+echo "=== Creating dummy files for missing CDI hostPath entries ==="
+grep 'hostPath:' /etc/cdi/nvidia.yaml | awk '{print $2}' | while read fpath; do
+  if [ ! -e "${fpath}" ]; then
+    echo "  Creating dummy: ${fpath}"
+    sudo mkdir -p "$(dirname "${fpath}")"
+    sudo touch "${fpath}"
+    sudo chmod 755 "${fpath}"
+  fi
+done
+echo "CDI hostPath stubs done."
 
 # ── 3. Find NVIDIA Vulkan library ─────────────────────────────────────────────
 LIBGLX=$(find /usr/lib/x86_64-linux-gnu -name "libGLX_nvidia.so.*" \
