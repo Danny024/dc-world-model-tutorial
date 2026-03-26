@@ -1,55 +1,52 @@
 #!/usr/bin/env bash
-# Usage: bash restart_kit.sh <NGC_API_KEY>
-# Pull usd-viewer 106.0.0 from NGC (Python 3.10 — avoids ImGui/Python 3.12 segfault in 109.0.2)
+# restart_kit.sh — Stop, rebuild, and restart the Kit streaming container
+# Run on the GPU VM via:
+#   bash /tmp/restart_kit.sh [NGC_API_KEY]
+set -e
 
-NGC_API_KEY="${1:-${NGC_API_KEY:-}}"
-NGC_IMAGE="nvcr.io/nvidia/omniverse/usd-viewer:106.0.0"
 AR_IMAGE="us-central1-docker.pkg.dev/hmth391/omniverse-kit/usd-viewer:latest"
+USD_PATH="/mnt/assets/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd"
 
-if [[ -z "${NGC_API_KEY}" ]]; then
-  echo "ERROR: pass NGC API key as first argument"
-  echo "  bash restart_kit.sh nvapi-xxxx..."
-  exit 1
+# ── Find the NVIDIA Vulkan / GLX library on this host ─────────────────────────
+LIBGLX=$(find /usr/lib/x86_64-linux-gnu -name "libGLX_nvidia.so.*" \
+  ! -name "*.so.0" 2>/dev/null | head -1)
+if [[ -z "${LIBGLX}" ]]; then
+  echo "WARNING: libGLX_nvidia not found — Vulkan may not work inside container"
+  LIBGLX_MOUNT=""
+else
+  echo "Found Vulkan library: ${LIBGLX}"
+  LIBGLX_MOUNT="-v ${LIBGLX}:${LIBGLX}:ro"
 fi
 
-echo "=== Logging into NGC ==="
-echo "${NGC_API_KEY}" | sudo docker login nvcr.io \
-  --username='$oauthtoken' \
-  --password-stdin
-
-echo "=== Pulling usd-viewer 106.0.0 from NGC (~8 GB) ==="
-sudo docker pull "${NGC_IMAGE}"
-
-echo "=== Tagging for Artifact Registry ==="
-sudo docker tag "${NGC_IMAGE}" "${AR_IMAGE}"
-
-echo "=== Authenticating with Artifact Registry ==="
-gcloud auth configure-docker us-central1-docker.pkg.dev --quiet
-
-echo "=== Pushing to Artifact Registry ==="
-sudo docker push "${AR_IMAGE}"
-
-echo "=== Restarting Kit container ==="
+# ── Stop and remove old container ─────────────────────────────────────────────
+echo "=== Stopping old container ==="
 sudo docker stop datacenter-kit 2>/dev/null || true
 sudo docker rm   datacenter-kit 2>/dev/null || true
+
+# ── Start new container ───────────────────────────────────────────────────────
+echo "=== Starting Kit container ==="
 sudo docker run -d \
   --name datacenter-kit \
-  --privileged \
   --device nvidia.com/gpu=all \
   --restart unless-stopped \
   -e ACCEPT_EULA=Y \
   -e NVIDIA_DRIVER_CAPABILITIES=all \
   -e NVIDIA_VISIBLE_DEVICES=all \
-  -e "USD_PATH=/mnt/assets/Assets/Datacenter/Facilities/Stages/Data_Hall/DataHall_Full_01.usd" \
+  -e "USD_PATH=${USD_PATH}" \
   -p 49100:49100/tcp \
   -p 49100-49200:49100-49200/udp \
   -v /mnt/local-assets/DigitalTwin:/mnt/assets:ro \
   -v /usr/share/vulkan:/usr/share/vulkan:ro \
   -v /etc/vulkan:/etc/vulkan:ro \
+  ${LIBGLX_MOUNT} \
   "${AR_IMAGE}"
 
-echo "=== Done — waiting 10s for container to start ==="
-sleep 10
+echo "=== Container started — waiting 15s ==="
+sleep 15
+
+echo "=== Status ==="
 sudo docker inspect datacenter-kit \
-  --format="Privileged: {{.HostConfig.Privileged}} | Restarts: {{.RestartCount}} | Image: {{.Config.Image}}"
-sudo docker logs datacenter-kit --tail 10 2>&1
+  --format="Restarts: {{.RestartCount}} | Status: {{.State.Status}}"
+sudo ss -tlnp | grep 49100 && echo "Port 49100 is OPEN — Kit is ready" \
+  || echo "Port 49100 not yet open — Kit still starting"
+sudo docker logs datacenter-kit --tail 15 2>&1
