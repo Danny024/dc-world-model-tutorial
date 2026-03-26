@@ -149,31 +149,31 @@ def submit_training_job(tarball_path: pathlib.Path) -> str:
     print(f"Training data: {training_csv_gcs}")
     print(f"Model output : {MODEL_ARTEFACT_GCS}/")
 
-    # 2. Build worker pool spec as JSON
+    # 2. Build job spec as JSON.
+    # --config for gcloud ai custom-jobs create contains the jobSpec fields
+    # directly (workerPoolSpecs, baseOutputDirectory) — NOT the outer CustomJob
+    # wrapper (displayName/jobSpec). displayName is passed as a CLI flag.
     job_spec = {
-        "displayName": JOB_DISPLAY_NAME,
-        "jobSpec": {
-            "workerPoolSpecs": [{
-                "machineSpec": {
-                    "machineType":      MACHINE_TYPE,
-                    "acceleratorType":  ACCELERATOR_TYPE,
-                    "acceleratorCount": ACCELERATOR_COUNT,
-                },
-                "replicaCount": 1,
-                "pythonPackageSpec": {
-                    "executorImageUri": TRAIN_IMAGE,
-                    "packageUris":      [tarball_gcs_uri],
-                    "pythonModule":     "trainer.task",
-                    "env": [
-                        {"name": "AIP_TRAINING_DATA_URI", "value": training_csv_gcs},
-                        {"name": "AIP_MODEL_DIR",         "value": f"{MODEL_ARTEFACT_GCS}/"},
-                        {"name": "EPOCHS",                "value": "50"},
-                        {"name": "GCS_BUCKET",            "value": GCS_BUCKET},
-                    ],
-                },
-            }],
-            "baseOutputDirectory": {"outputUriPrefix": MODEL_ARTEFACT_GCS},
-        },
+        "workerPoolSpecs": [{
+            "machineSpec": {
+                "machineType":      MACHINE_TYPE,
+                "acceleratorType":  ACCELERATOR_TYPE,
+                "acceleratorCount": ACCELERATOR_COUNT,
+            },
+            "replicaCount": 1,
+            "pythonPackageSpec": {
+                "executorImageUri": TRAIN_IMAGE,
+                "packageUris":      [tarball_gcs_uri],
+                "pythonModule":     "trainer.task",
+                "env": [
+                    {"name": "AIP_TRAINING_DATA_URI", "value": training_csv_gcs},
+                    {"name": "AIP_MODEL_DIR",         "value": f"{MODEL_ARTEFACT_GCS}/"},
+                    {"name": "EPOCHS",                "value": "50"},
+                    {"name": "GCS_BUCKET",            "value": GCS_BUCKET},
+                ],
+            },
+        }],
+        "baseOutputDirectory": {"outputUriPrefix": MODEL_ARTEFACT_GCS},
     }
 
     # 3. Write spec to temp file and submit
