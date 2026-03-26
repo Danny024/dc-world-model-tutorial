@@ -20,7 +20,7 @@ import subprocess
 import textwrap
 
 from google.cloud import aiplatform
-from google.cloud.aiplatform import CustomTrainingJob
+from google.cloud.aiplatform import CustomPythonPackageTrainingJob
 
 # ── Configuration ─────────────────────────────────────────────────────────────
 PROJECT_ID          = os.environ["GCP_PROJECT_ID"]
@@ -138,11 +138,19 @@ def submit_training_job(tarball_path: pathlib.Path) -> aiplatform.Model:
     aiplatform.init(project=PROJECT_ID, location=REGION,
                     staging_bucket=f"gs://{GCS_BUCKET}/vertex-staging")
 
-    job = CustomTrainingJob(
-        display_name       = JOB_DISPLAY_NAME,
-        script_path        = None,              # using a package instead
-        container_uri      = TRAIN_IMAGE,
-        requirements       = [],
+    # Upload the tarball to GCS so Vertex AI can fetch it
+    tarball_gcs_uri = f"gs://{GCS_BUCKET}/vertex-staging/trainer-0.1.tar.gz"
+    print(f"Uploading training package to {tarball_gcs_uri}...")
+    subprocess.run(
+        ["gcloud", "storage", "cp", str(tarball_path), tarball_gcs_uri],
+        check=True,
+    )
+
+    job = CustomPythonPackageTrainingJob(
+        display_name                      = JOB_DISPLAY_NAME,
+        python_package_gcs_uri            = tarball_gcs_uri,
+        python_module_name                = "trainer.task",
+        container_uri                     = TRAIN_IMAGE,
         model_serving_container_image_uri = SERVE_IMAGE,
     )
 
@@ -163,7 +171,7 @@ def submit_training_job(tarball_path: pathlib.Path) -> aiplatform.Model:
         accelerator_type   = ACCELERATOR_TYPE,
         accelerator_count  = ACCELERATOR_COUNT,
         base_output_dir    = MODEL_ARTEFACT_GCS,
-        sync               = True,             # block until complete
+        sync               = True,
     )
 
     print(f"\nTraining job completed. Model resource name: {model.resource_name}")
