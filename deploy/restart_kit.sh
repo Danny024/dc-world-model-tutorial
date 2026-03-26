@@ -56,23 +56,32 @@ echo "=== Stopping old container ==="
 sudo docker stop datacenter-kit 2>/dev/null || true
 sudo docker rm   datacenter-kit 2>/dev/null || true
 
-# ── 5. Start container ────────────────────────────────────────────────────────
+# ── 5. Start container — override entrypoint to disable crashing ImGui ext ────
+# Kit 109.0.2 has a Python 3.12 ImGui bug in carbOnPluginPreStartup.
+# Passing --/exts/omni.kit.imgui/enabled=false bypasses the crash.
 echo "=== Starting Kit container ==="
 sudo docker run -d \
   --name datacenter-kit \
   --device nvidia.com/gpu=all \
   --restart unless-stopped \
+  --entrypoint bash \
   -e ACCEPT_EULA=Y \
   -e NVIDIA_DRIVER_CAPABILITIES=all \
   -e NVIDIA_VISIBLE_DEVICES=all \
-  -e "USD_PATH=${USD_PATH}" \
+  -e EGL_PLATFORM=surfaceless \
   -p 49100:49100/tcp \
   -p 49100-49200:49100-49200/udp \
   -v /mnt/local-assets/DigitalTwin:/mnt/assets:ro \
   -v /usr/share/vulkan:/usr/share/vulkan:ro \
   -v /etc/vulkan:/etc/vulkan:ro \
   ${LIBGLX_MOUNT} \
-  "${AR_IMAGE}"
+  "${AR_IMAGE}" \
+  -c "/app/kit/kit /app/apps/usd.viewer_streaming.kit \
+      --no-window \
+      --ext-folder /home/ubuntu/.local/share/ov/data/exts/v2 \
+      --/app/auto_load_usd=${USD_PATH} \
+      --/exts/omni.kit.imgui/enabled=false \
+      --/exts/omni.ui/enabled=false"
 
 echo "=== Waiting 20s for Kit to initialise ==="
 sleep 20
