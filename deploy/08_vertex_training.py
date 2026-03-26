@@ -35,9 +35,9 @@ MODEL_ARTEFACT_GCS  = os.environ.get("MODEL_ARTEFACT_GCS",
 JOB_DISPLAY_NAME    = "datacenter-world-model-training"
 ENDPOINT_DISPLAY    = "datacenter-failure-predictor"
 
-# Vertex AI pre-built PyTorch training container
-TRAIN_IMAGE         = "us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-1:latest"
-SERVE_IMAGE         = "us-docker.pkg.dev/vertex-ai/prediction/pytorch-gpu.2-1:latest"
+# Vertex AI pre-built PyTorch training container (Python version suffix required)
+TRAIN_IMAGE         = "us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-1.py310:latest"
+SERVE_IMAGE         = "us-docker.pkg.dev/vertex-ai/prediction/pytorch-gpu.2-1.py310:latest"
 
 # ── A100 40GB (confirmed quota: 16x in us-central1-a) ────────────────────────
 # Use a2-highgpu-1g  + NVIDIA_TESLA_A100  → A100 40GB  ✓  (quota confirmed)
