@@ -188,6 +188,7 @@ def submit_training_job(tarball_path: pathlib.Path) -> str:
     result = subprocess.run(
         [
             "gcloud", "ai", "custom-jobs", "create",
+            f"--display-name={JOB_DISPLAY_NAME}",
             f"--region={REGION}",
             f"--project={PROJECT_ID}",
             f"--config={spec_file}",
