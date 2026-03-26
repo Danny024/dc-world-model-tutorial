@@ -49,3 +49,9 @@ Thumbs.db
 # ── Logs ──────────────────────────────────────────────────────────────────────
 *.log
 logs/
+
+# ── Class roster — contains student emails, never commit ─────────────────────
+class_roster.txt
+
+# ── Windows installers ────────────────────────────────────────────────────────
+*.exe
