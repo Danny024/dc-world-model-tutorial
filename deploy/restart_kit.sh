@@ -30,7 +30,7 @@ echo "Persistenced socket: $(ls -la /run/nvidia-persistenced/socket 2>/dev/null 
 
 # ── 2. Create dummy files for all missing CDI hostPath entries ────────────────
 echo "=== Creating dummy files for missing CDI hostPath entries ==="
-grep 'hostPath:' /etc/cdi/nvidia.yaml | awk '{print $2}' | while read fpath; do
+grep 'hostPath:' /etc/cdi/nvidia.yaml | awk '{print $NF}' | while read fpath; do
   if [ ! -e "${fpath}" ]; then
     echo "  Creating dummy: ${fpath}"
     sudo mkdir -p "$(dirname "${fpath}")"
