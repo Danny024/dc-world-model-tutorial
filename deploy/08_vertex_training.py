@@ -193,9 +193,13 @@ def submit_training_job(tarball_path: pathlib.Path) -> str:
             f"--config={spec_file}",
             "--format=json",
         ],
-        capture_output=True, text=True, check=True,
+        capture_output=True, text=True,
     )
     os.unlink(spec_file)
+    if result.returncode != 0:
+        print("gcloud stderr:", result.stderr)
+        print("gcloud stdout:", result.stdout)
+        raise RuntimeError(f"gcloud custom-jobs create failed (exit {result.returncode})")
 
     job_info = json.loads(result.stdout)
     job_name  = job_info["name"]          # projects/.../locations/.../customJobs/ID
