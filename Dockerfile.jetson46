@@ -1,0 +1,70 @@
+# ============================================================
+# Dockerfile.jetson46 — Edge Inference Container for Jetson Nano
+#                       JetPack 4.6 (Legacy) variant
+# ============================================================
+# Target platform : linux/arm64 (NVIDIA Jetson, JetPack 4.6)
+# Base image      : NVIDIA L4T PyTorch R32.7.1 (CUDA 10.2, PyTorch 1.10, Python 3.6)
+#
+# Use this Dockerfile when students are running JetPack 4.6 (Legacy).
+# For JetPack 5.x students, use Dockerfile.jetson instead.
+#
+# Key differences from Dockerfile.jetson (JetPack 5.x):
+#   - Base: l4t-pytorch:r32.7.1 (CUDA 10.2) vs r35.4.1 (CUDA 12.x)
+#   - Python 3.6 (not 3.8+) — Flask, pandas, websockets pinned accordingly
+#   - ONNX Runtime 1.11.0 — last version supporting CUDA 10.2 + Python 3.6
+#   - TensorRT 8.2.x — supports ONNX opset ≤ 13 only
+#     → The ONNX model MUST be exported with --opset 13:
+#       python deploy/export_edge.py --opset 13 --output-name master_v1_jp46.onnx
+#   - trtexec path: /usr/src/tensorrt/bin/trtexec (same as JP5)
+#
+# Build (on an x86 machine with Docker buildx):
+#   JETPACK_VERSION=4.6 bash deploy/build_edge_image.sh
+#
+# Run on Jetson Nano (JetPack 4.6):
+#   docker run -d \
+#     --runtime nvidia \
+#     -p 8080:8080 \
+#     -e MODEL_ONNX_PATH=/opt/models/public/master_v1_jp46.onnx \
+#     -v /opt/models:/opt/models \
+#     us-central1-docker.pkg.dev/hmth391/world-model-repo/datacenter-inference:jetson-jp46-latest
+# ============================================================
+
+FROM nvcr.io/nvidia/l4t-pytorch:r32.7.1-pth1.10-py3
+
+# Install ONNX Runtime GPU for JetPack 4.6 (CUDA 10.2, Python 3.6, ARM64)
+# ORT 1.11.0 is the last release supporting CUDA 10.2 + Python 3.6.
+# The NVIDIA-built wheel from Jetson Zoo is preferred; PyPI fallback for CI.
+ARG ONNXRUNTIME_VERSION=1.11.0
+RUN pip3 install --no-cache-dir \
+    "https://nvidia.box.com/shared/static/pmsqsiaw4pg9qrbeckcbymho6c01jj4z.whl" \
+    || pip3 install --no-cache-dir onnxruntime-gpu==${ONNXRUNTIME_VERSION}
+
+# Install remaining Python dependencies
+# Uses requirements_jetson46.txt — pinned for Python 3.6 compatibility
+COPY requirements_jetson46.txt /tmp/requirements_jetson46.txt
+RUN pip3 install --no-cache-dir -r /tmp/requirements_jetson46.txt
+
+WORKDIR /app
+
+# Copy inference code
+COPY deploy/07_world_model.py   ./world_model.py
+COPY deploy/dino_encoder.py     ./dino_encoder.py
+COPY deploy/inference_server.py ./inference_server.py
+
+# Model loading priority (same as other containers):
+#   1. MODEL_ONNX_PATH env var → ONNX Runtime (fast, TensorRT if .trt provided)
+#   2. MODEL_PATH env var      → PyTorch checkpoint (fallback)
+#   3. /app/model_output/best_model.pt
+#   4. MODEL_GCS_URI env var   → download from GCS
+
+ENV MODEL_ONNX_PATH=""
+ENV MODEL_PATH=""
+ENV MODEL_GCS_URI=""
+ENV PORT=8080
+
+EXPOSE 8080
+
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 \
+    CMD curl -f http://localhost:${PORT}/health || exit 1
+
+CMD ["python3", "inference_server.py"]

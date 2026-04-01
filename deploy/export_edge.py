@@ -193,20 +193,60 @@ def write_metadata(
     log.info("Metadata written: %s", meta_path)
 
 
-def upload_to_gcs(local_dir: pathlib.Path, gcs_prefix: str):
-    """Upload all files in local_dir to GCS."""
+def upload_to_gcs(
+    local_dir:   pathlib.Path,
+    gcs_prefix:  str,
+    public:      bool = False,
+    single_file: str | None = None,
+):
+    """Upload files in local_dir to GCS.
+
+    Args:
+        local_dir:   Directory containing files to upload.
+        gcs_prefix:  GCS destination prefix (gs://bucket/path).
+        public:      If True, set publicRead ACL on each uploaded object so
+                     students can pull with wget/curl without gcloud auth.
+                     Requires fine-grained (not uniform) bucket ACLs.
+        single_file: If set, upload only this filename from local_dir.
+    """
     from google.cloud import storage  # noqa: PLC0415
     client = storage.Client()
 
-    no_scheme  = gcs_prefix.removeprefix("gs://")
+    no_scheme   = gcs_prefix.removeprefix("gs://")
     bucket_name, prefix = no_scheme.split("/", 1)
     bucket = client.bucket(bucket_name)
 
-    for file_path in local_dir.iterdir():
+    files = (
+        [local_dir / single_file]
+        if single_file
+        else list(local_dir.iterdir())
+    )
+
+    for file_path in files:
+        if not file_path.exists():
+            log.warning("File not found, skipping: %s", file_path)
+            continue
         blob_name = f"{prefix.rstrip('/')}/{file_path.name}"
         blob = bucket.blob(blob_name)
         blob.upload_from_filename(str(file_path))
-        log.info("Uploaded: gs://%s/%s", bucket_name, blob_name)
+        if public:
+            try:
+                blob.make_public()
+                log.info(
+                    "Uploaded (publicRead): "
+                    "https://storage.googleapis.com/%s/%s",
+                    bucket_name, blob_name,
+                )
+            except Exception as exc:  # noqa: BLE001
+                log.warning(
+                    "Could not set publicRead ACL on gs://%s/%s — "
+                    "bucket may use uniform access. "
+                    "Run manually: gsutil acl ch -u AllUsers:R gs://%s/%s  "
+                    "Error: %s",
+                    bucket_name, blob_name, bucket_name, blob_name, exc,
+                )
+        else:
+            log.info("Uploaded: gs://%s/%s", bucket_name, blob_name)
 
 
 # ── CLI ───────────────────────────────────────────────────────────────────────
@@ -223,19 +263,36 @@ if __name__ == "__main__":
                         help="Local directory to write ONNX files")
     parser.add_argument("--opset",       type=int, default=17,
                         help="ONNX opset version (default: 17)")
+    parser.add_argument("--output-name",
+                        default="world_model.onnx",
+                        help="Filename for the exported world model ONNX "
+                             "(e.g. master_v1.onnx for public release, "
+                             "master_v1_jp46.onnx for JetPack 4.6 opset-13 export)")
     parser.add_argument("--gcs-upload",  action="store_true",
                         help="Upload exported files to "
                              "gs://hmth391-omniverse-assets/models/edge/")
     parser.add_argument("--gcs-prefix",
                         default="gs://hmth391-omniverse-assets/models/edge",
-                        help="GCS path to upload artefacts to")
+                        help="GCS path to upload artefacts to (private, auth required)")
+    parser.add_argument("--public",      action="store_true",
+                        help="Upload to --gcs-public-prefix with publicRead ACL "
+                             "so students can wget the file without gcloud auth. "
+                             "Only uploads the single ONNX file (not metadata/DINO).")
+    parser.add_argument("--gcs-public-prefix",
+                        default="gs://hmth391-omniverse-assets/models/public",
+                        help="GCS path for the public-read ONNX file")
     args = parser.parse_args()
 
     out_dir = pathlib.Path(args.output_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    # Export world model
+    # Export world model (optionally rename output file)
     wm_onnx = export_world_model_onnx(args.model_ckpt, out_dir, opset=args.opset)
+    if args.output_name != "world_model.onnx":
+        renamed = out_dir / args.output_name
+        wm_onnx.rename(renamed)
+        wm_onnx = renamed
+        log.info("Renamed ONNX output to: %s", wm_onnx.name)
     verify_onnx(wm_onnx)
 
     # Export DINO encoder (optional)
@@ -246,7 +303,7 @@ if __name__ == "__main__":
     # Metadata
     write_metadata(out_dir, args.model_ckpt, args.dino_ckpt)
 
-    # GCS upload
+    # Private GCS upload (all artefacts, authenticated)
     if args.gcs_upload:
         log.info("Uploading edge artefacts to %s ...", args.gcs_prefix)
         upload_to_gcs(out_dir, args.gcs_prefix)
@@ -256,9 +313,26 @@ if __name__ == "__main__":
         log.info("  gcloud storage cp -r %s /opt/models/", args.gcs_prefix)
         log.info("")
         log.info("Run inference on Jetson:")
-        log.info("  MODEL_ONNX_PATH=/opt/models/edge/world_model.onnx "
-                 "python3 inference_server.py")
-    else:
+        log.info("  MODEL_ONNX_PATH=/opt/models/edge/%s "
+                 "python3 inference_server.py", wm_onnx.name)
+
+    # Public GCS upload (ONNX only, no auth needed to download)
+    if args.public:
+        log.info("Publishing %s to %s (publicRead) ...",
+                 wm_onnx.name, args.gcs_public_prefix)
+        upload_to_gcs(out_dir, args.gcs_public_prefix,
+                      public=True, single_file=wm_onnx.name)
+        bucket = args.gcs_public_prefix.removeprefix("gs://").split("/")[0]
+        prefix = args.gcs_public_prefix.removeprefix(f"gs://{bucket}/")
+        log.info("")
+        log.info("Students download with:")
+        log.info("  wget https://storage.googleapis.com/%s/%s/%s",
+                 bucket, prefix, wm_onnx.name)
+        log.info("  # or: curl -O https://storage.googleapis.com/%s/%s/%s",
+                 bucket, prefix, wm_onnx.name)
+
+    if not args.gcs_upload and not args.public:
         log.info("")
         log.info("Exported files are in: %s", out_dir)
-        log.info("Add --gcs-upload to push to GCS for Jetson deployment.")
+        log.info("Add --gcs-upload to push to GCS (private).")
+        log.info("Add --public to publish with no-auth wget URL.")

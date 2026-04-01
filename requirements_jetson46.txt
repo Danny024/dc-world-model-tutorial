@@ -1,0 +1,16 @@
+# Jetson Nano edge inference dependencies — JetPack 4.6 (Python 3.6) variant
+# PyTorch is already provided by the l4t-pytorch:r32.7.1 base image
+# DO NOT add torch here — it would overwrite the ARM64 version
+#
+# All packages pinned to the last version supporting Python 3.6.
+# Flask 3.0+, pandas 2.0+, websockets 12.0+, google-cloud-storage 2.0+
+# all require Python 3.8+ and must be excluded here.
+
+numpy>=1.19.0,<1.24.0
+pandas>=1.1.0,<2.0.0
+flask>=2.0.0,<3.0.0
+requests>=2.25.0,<3.0.0
+google-cloud-storage>=1.44.0,<2.0.0
+google-auth>=1.30.0,<2.0.0
+websockets>=9.0,<12.0
+tomli>=1.0.0,<2.0.0
